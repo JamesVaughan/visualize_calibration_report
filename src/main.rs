@@ -413,7 +413,7 @@ impl CalibrationApp {
         
         if !selected_variables.is_empty() {
             ui.separator();
-            ui.label(RichText::new("📈 Selected Variables Plot").heading());
+            ui.label(RichText::new("📈 Selected Variables Plots").heading());
             
             let colors = [
                 Color32::RED, Color32::BLUE, Color32::GREEN, Color32::from_rgb(255, 165, 0),
@@ -421,62 +421,106 @@ impl CalibrationApp {
                 Color32::YELLOW, Color32::from_rgb(255, 192, 203), Color32::DARK_GRAY, Color32::BROWN,
             ];
             
-            Plot::new("variables_plot")
-                .view_aspect(2.0)
-                .height(400.0)
-                .legend(egui_plot::Legend::default())
-                .show(ui, |plot_ui| {
-                    let mut plot_idx = 0;
-                    
-                    for (var_index, var_name) in &selected_variables {
-                        // Plot error if selected and available
-                        if *var_index < self.show_error_for_var.len() && 
-                           self.show_error_for_var[*var_index] && 
-                           self.has_error_column(var_name) {
-                            
-                            if let Some(error_col) = self.get_error_column_name(var_name) {
-                                let points: PlotPoints = self.records
-                                    .iter()
-                                    .filter_map(|r| {
-                                        r.data.get(&error_col).map(|&val| [r.iteration as f64, val.abs()])
-                                    })
-                                    .collect();
-                                
-                                let line = Line::new(points)
-                                    .color(colors[plot_idx % colors.len()])
-                                    .width(2.0)
-                                    .name(format!("{} (Error)", var_name));
-                                
-                                plot_ui.line(line);
-                                plot_idx += 1;
-                            }
-                        }
+            // Check if we have any error or value data to show
+            let has_error_data = selected_variables.iter().any(|(var_index, var_name)| {
+                *var_index < self.show_error_for_var.len() && 
+                self.show_error_for_var[*var_index] && 
+                self.has_error_column(var_name)
+            });
+            
+            let has_value_data = selected_variables.iter().any(|(var_index, var_name)| {
+                *var_index < self.show_value_for_var.len() && 
+                self.show_value_for_var[*var_index] && 
+                self.has_value_column(var_name)
+            });
+            
+            // Show plots side by side
+            ui.horizontal(|ui| {
+                // Error plot (left side)
+                if has_error_data {
+                    ui.vertical(|ui| {
+                        ui.label(RichText::new("🔴 Error Convergence").strong());
                         
-                        // Plot value if selected and available
-                        if *var_index < self.show_value_for_var.len() && 
-                           self.show_value_for_var[*var_index] && 
-                           self.has_value_column(var_name) {
-                            
-                            if let Some(value_col) = self.get_value_column_name(var_name) {
-                                let points: PlotPoints = self.records
-                                    .iter()
-                                    .filter_map(|r| {
-                                        r.data.get(&value_col).map(|&val| [r.iteration as f64, val])
-                                    })
-                                    .collect();
+                        Plot::new("error_plot")
+                            .view_aspect(1.5)
+                            .height(350.0)
+                            .width(ui.available_width() * 0.48)
+                            .legend(egui_plot::Legend::default())
+                            .show(ui, |plot_ui| {
+                                let mut plot_idx = 0;
                                 
-                                let line = Line::new(points)
-                                    .color(colors[plot_idx % colors.len()])
-                                    .width(2.0)
-                                    .style(egui_plot::LineStyle::Dashed { length: 10.0 })
-                                    .name(format!("{} (Value)", var_name));
+                                for (var_index, var_name) in &selected_variables {
+                                    if *var_index < self.show_error_for_var.len() && 
+                                       self.show_error_for_var[*var_index] && 
+                                       self.has_error_column(var_name) {
+                                        
+                                        if let Some(error_col) = self.get_error_column_name(var_name) {
+                                            let points: PlotPoints = self.records
+                                                .iter()
+                                                .filter_map(|r| {
+                                                    r.data.get(&error_col).map(|&val| [r.iteration as f64, val.abs()])
+                                                })
+                                                .collect();
+                                            
+                                            let line = Line::new(points)
+                                                .color(colors[plot_idx % colors.len()])
+                                                .width(2.0)
+                                                .name(var_name);
+                                            
+                                            plot_ui.line(line);
+                                            plot_idx += 1;
+                                        }
+                                    }
+                                }
+                            });
+                    });
+                }
+                
+                // Add spacing between plots
+                if has_error_data && has_value_data {
+                    ui.separator();
+                }
+                
+                // Value plot (right side)
+                if has_value_data {
+                    ui.vertical(|ui| {
+                        ui.label(RichText::new("🔵 Value Evolution").strong());
+                        
+                        Plot::new("value_plot")
+                            .view_aspect(1.5)
+                            .height(350.0)
+                            .width(ui.available_width() * if has_error_data { 0.98 } else { 1.0 })
+                            .legend(egui_plot::Legend::default())
+                            .show(ui, |plot_ui| {
+                                let mut plot_idx = 0;
                                 
-                                plot_ui.line(line);
-                                plot_idx += 1;
-                            }
-                        }
-                    }
-                });
+                                for (var_index, var_name) in &selected_variables {
+                                    if *var_index < self.show_value_for_var.len() && 
+                                       self.show_value_for_var[*var_index] && 
+                                       self.has_value_column(var_name) {
+                                        
+                                        if let Some(value_col) = self.get_value_column_name(var_name) {
+                                            let points: PlotPoints = self.records
+                                                .iter()
+                                                .filter_map(|r| {
+                                                    r.data.get(&value_col).map(|&val| [r.iteration as f64, val])
+                                                })
+                                                .collect();
+                                            
+                                            let line = Line::new(points)
+                                                .color(colors[plot_idx % colors.len()])
+                                                .width(2.0)
+                                                .name(var_name);
+                                            
+                                            plot_ui.line(line);
+                                            plot_idx += 1;
+                                        }
+                                    }
+                                }
+                            });
+                    });
+                }
+            });
         }
     }
 }
