@@ -14,6 +14,7 @@ struct CalibrationRecord {
     data: HashMap<String, f64>,
 }
 
+#[derive(Default)]
 struct CalibrationApp {
     records: Vec<CalibrationRecord>,
     error_columns: Vec<String>,
@@ -25,51 +26,19 @@ struct CalibrationApp {
     file_loaded: bool,
     loading_error: Option<String>,
     
-    // Plot selection - now per variable with option for error/value/both
+    // Plot selection - simplified to just variable selection
     selected_vars: Vec<bool>,
-    show_error_for_var: Vec<bool>,
-    show_value_for_var: Vec<bool>,
+    prev_selected_vars: Vec<bool>, // Track previous selection to detect changes
     filter_text: String,
-    
-    // Statistics
-    show_summary: bool,
-    final_errors: Vec<(String, f64)>,
-    total_error_trend: Vec<(f64, f64)>,
-    
-    // UI filters
-    max_vars_to_show: usize,
-    show_only_filtered: bool,
 }
 
-impl Default for CalibrationApp {
-    fn default() -> Self {
-        Self {
-            records: Vec::new(),
-            error_columns: Vec::new(),
-            value_columns: Vec::new(),
-            variable_names: Vec::new(),
-            file_path: String::new(),
-            file_loaded: false,
-            loading_error: None,
-            selected_vars: Vec::new(),
-            show_error_for_var: Vec::new(),
-            show_value_for_var: Vec::new(),
-            filter_text: String::new(),
-            show_summary: false,
-            final_errors: Vec::new(),
-            total_error_trend: Vec::new(),
-            max_vars_to_show: 50,
-            show_only_filtered: false,
-        }
-    }
-}
 
 impl CalibrationApp {
     fn load_file(&mut self, path: String) -> Result<()> {
-        println!("Starting to load file: {}", path);
+        println!("Starting to load file: {path}");
         
         let file = File::open(&path)
-            .with_context(|| format!("Failed to open file: {}", path))?;
+            .with_context(|| format!("Failed to open file: {path}"))?;
         
         let mut rdr = ReaderBuilder::new()
             .has_headers(true)
@@ -86,11 +55,11 @@ impl CalibrationApp {
             
             // Add progress feedback for large files
             if record_count % 100 == 0 {
-                println!("Loaded {} records...", record_count);
+                println!("Loaded {record_count} records...");
             }
         }
         
-        println!("Finished loading {} records", record_count);
+        println!("Finished loading {record_count} records");
         
         if records.is_empty() {
             return Err(anyhow::anyhow!("No records found in file"));
@@ -110,10 +79,6 @@ impl CalibrationApp {
             .filter(|k| k.starts_with("Value:"))
             .cloned()
             .collect();
-        
-        // Calculate summary statistics
-        let final_errors = self.calculate_final_errors(&records, &error_columns);
-        let total_error_trend = self.calculate_total_error_trend(&records, &error_columns);
         
         // Create unified variable names (base names without Error:/Value: prefix)
         let mut variable_names = std::collections::HashSet::new();
@@ -135,8 +100,7 @@ impl CalibrationApp {
         
         // Initialize selection vectors
         let selected_vars = vec![false; variable_names.len()];
-        let show_error_for_var = vec![true; variable_names.len()];
-        let show_value_for_var = vec![false; variable_names.len()];
+        let prev_selected_vars = vec![false; variable_names.len()];
         
         // Update state
         self.records = records;
@@ -144,43 +108,11 @@ impl CalibrationApp {
         self.value_columns = value_columns;
         self.variable_names = variable_names;
         self.selected_vars = selected_vars;
-        self.show_error_for_var = show_error_for_var;
-        self.show_value_for_var = show_value_for_var;
-        self.final_errors = final_errors;
-        self.total_error_trend = total_error_trend;
+        self.prev_selected_vars = prev_selected_vars;
         self.file_loaded = true;
         self.loading_error = None;
         
         Ok(())
-    }
-    
-    fn calculate_final_errors(&self, records: &[CalibrationRecord], error_columns: &[String]) -> Vec<(String, f64)> {
-        if let Some(last_record) = records.last() {
-            let mut final_errors: Vec<(String, f64)> = error_columns
-                .iter()
-                .filter_map(|col| {
-                    last_record.data.get(col).map(|&val| (col.clone(), val.abs()))
-                })
-                .collect();
-            
-            final_errors.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap());
-            final_errors
-        } else {
-            Vec::new()
-        }
-    }
-    
-    fn calculate_total_error_trend(&self, records: &[CalibrationRecord], error_columns: &[String]) -> Vec<(f64, f64)> {
-        records
-            .iter()
-            .map(|record| {
-                let total_error: f64 = error_columns
-                    .iter()
-                    .filter_map(|col| record.data.get(col).map(|&val| val.abs()))
-                    .sum();
-                (record.iteration as f64, total_error)
-            })
-            .collect()
     }
     
     fn filter_columns(&self, columns: &[String]) -> Vec<String> {
@@ -194,7 +126,6 @@ impl CalibrationApp {
                     filter_terms.iter().any(|term| col.to_lowercase().contains(&term.to_lowercase()))
                 }
             })
-            .take(self.max_vars_to_show)
             .cloned()
             .collect();
         
@@ -251,18 +182,16 @@ impl eframe::App for CalibrationApp {
                     }
                 }
                 
-                if !self.file_path.is_empty() {
-                    if ui.button("🔄 Reload").clicked() {
-                        if let Err(e) = self.load_file(self.file_path.clone()) {
-                            self.loading_error = Some(e.to_string());
-                            self.file_loaded = false;
-                        }
+                if !self.file_path.is_empty() && ui.button("🔄 Reload").clicked() {
+                    if let Err(e) = self.load_file(self.file_path.clone()) {
+                        self.loading_error = Some(e.to_string());
+                        self.file_loaded = false;
                     }
                 }
             });
             
             if let Some(error) = &self.loading_error {
-                ui.colored_label(Color32::RED, format!("❌ Error: {}", error));
+                ui.colored_label(Color32::RED, format!("❌ Error: {error}"));
             }
             
             if !self.file_loaded {
@@ -272,43 +201,10 @@ impl eframe::App for CalibrationApp {
             
             ui.separator();
             
-            // Summary section
-            ui.horizontal(|ui| {
-                ui.checkbox(&mut self.show_summary, "📈 Show Summary");
-                if self.show_summary {
-                    ui.label(format!("📊 {} iterations, {} error variables, {} value variables", 
-                        self.records.len(), self.error_columns.len(), self.value_columns.len()));
-                }
-            });
-            
-            if self.show_summary {
-                ui.group(|ui| {
-                    ui.label(RichText::new("Top 10 Variables by Final Error:").strong());
-                    for (i, (var, error)) in self.final_errors.iter().take(10).enumerate() {
-                        let clean_name = var.strip_prefix("Error:").unwrap_or(var);
-                        ui.label(format!("  {}. {} = {:.6}", i + 1, clean_name, error));
-                    }
-                    
-                    if let (Some(first), Some(last)) = (self.total_error_trend.first(), self.total_error_trend.last()) {
-                        let improvement = ((first.1 - last.1) / first.1) * 100.0;
-                        ui.separator();
-                        ui.label(format!("📉 Total Error: {:.6} → {:.6} ({:.2}% change)", 
-                            first.1, last.1, improvement));
-                    }
-                });
-            }
-            
-            ui.separator();
-            
-            // Plot type selection - removed since we now show both per variable
-            
             // Filter controls
             ui.horizontal(|ui| {
                 ui.label("🔍 Filter:");
                 ui.text_edit_singleline(&mut self.filter_text);
-                ui.label("Max vars:");
-                ui.add(egui::DragValue::new(&mut self.max_vars_to_show).range(1..=100));
-                ui.checkbox(&mut self.show_only_filtered, "Show only filtered");
             });
             
             ui.separator();
@@ -316,22 +212,6 @@ impl eframe::App for CalibrationApp {
             // Variable selection and plotting
             egui::ScrollArea::vertical().show(ui, |ui| {
                 self.show_variables_section(ui);
-                
-                // Total error trend (always show if data is loaded)
-                if !self.total_error_trend.is_empty() {
-                    ui.separator();
-                    ui.label(RichText::new("📊 Total Absolute Error Over Time").heading());
-                    
-                    let points: PlotPoints = self.total_error_trend.iter().map(|(x, y)| [*x, *y]).collect();
-                    let line = Line::new(points).color(Color32::RED).width(2.0);
-                    
-                    Plot::new("total_error_plot")
-                        .view_aspect(2.0)
-                        .height(200.0)
-                        .show(ui, |plot_ui| {
-                            plot_ui.line(line);
-                        });
-                }
             });
         });
     }
@@ -339,7 +219,7 @@ impl eframe::App for CalibrationApp {
 
 impl CalibrationApp {
     fn show_variables_section(&mut self, ui: &mut Ui) {
-        ui.label(RichText::new("� Variables").heading());
+        ui.label(RichText::new("Variables").heading());
         
         let filtered_vars = self.filter_columns(&self.variable_names);
         
@@ -348,61 +228,87 @@ impl CalibrationApp {
             return;
         }
         
-        // Variable selection and options
-        let mut temp_selections = Vec::new();
-        let mut temp_error_options = Vec::new();
-        let mut temp_value_options = Vec::new();
+        // Calculate pagination
+        let total_vars = filtered_vars.len();
         
-        for var_name in filtered_vars.iter() {
-            if let Some(var_index) = self.variable_names.iter().position(|x| x == var_name) {
-                if var_index >= self.selected_vars.len() {
-                    continue;
-                }
+        // Show variable count
+        ui.horizontal(|ui| {
+            ui.label(format!("� Showing {total_vars} variables"));
+        });
+        
+        ui.separator();
+        // Variable selection and options in scrollable area
+        egui::ScrollArea::vertical()
+            .max_height(250.0)
+            .show(ui, |ui| {
+                // Calculate optimal number of columns based on available width
+                // Estimate column width: checkbox + text + padding (~200px per column)
+                let available_width = ui.available_width();
+                let estimated_column_width = 200.0;
+                let columns_count = ((available_width / estimated_column_width) as usize).clamp(1, 6); // Between 1-6 columns
+                let vars_per_column = filtered_vars.len().div_ceil(columns_count);
                 
-                ui.group(|ui| {
-                    ui.horizontal(|ui| {
-                        // Main checkbox to select the variable
-                        let mut selected = self.selected_vars[var_index];
-                        if ui.checkbox(&mut selected, format!("📈 {}", var_name)).changed() {
-                            temp_selections.push((var_index, selected));
-                        }
+                ui.horizontal_top(|ui| {
+                    for col_idx in 0..columns_count {
+                        let start = col_idx * vars_per_column;
+                        let end = ((col_idx + 1) * vars_per_column).min(filtered_vars.len());
                         
-                        if selected {
+                        if start >= filtered_vars.len() {
+                            break;
+                        }                        
+                        ui.vertical(|ui| {
+                            for var_name in &filtered_vars[start..end] {
+                                if let Some(var_index) = self.variable_names.iter().position(|x| x == var_name) {
+                                    if var_index >= self.selected_vars.len() {
+                                        continue;
+                                    }
+                                    
+                                    ui.group(|ui| {
+                                        ui.vertical(|ui| {
+                                            // Main checkbox to select the variable
+                                            let mut selected = self.selected_vars[var_index];
+                                            if ui.checkbox(&mut selected, format!("📈 {var_name}")).changed() {
+                                                self.selected_vars[var_index] = selected;
+                                            }
+                                        });
+                                    });
+                                    
+                                    ui.add_space(2.0); // Small spacing between variables
+                                }
+                            }
+                        });
+                        
+                        // Add column separator
+                        if col_idx < columns_count - 1 && end < filtered_vars.len() {
                             ui.separator();
-                            
-                            // Error checkbox (only if error column exists)
-                            if self.has_error_column(var_name) {
-                                let mut show_error = self.show_error_for_var[var_index];
-                                if ui.checkbox(&mut show_error, "🔴 Error").changed() {
-                                    temp_error_options.push((var_index, show_error));
-                                }
-                            }
-                            
-                            // Value checkbox (only if value column exists)
-                            if self.has_value_column(var_name) {
-                                let mut show_value = self.show_value_for_var[var_index];
-                                if ui.checkbox(&mut show_value, "🔵 Value").changed() {
-                                    temp_value_options.push((var_index, show_value));
-                                }
-                            }
                         }
-                    });
+                    }
                 });
+            });
+        
+        ui.separator();
+        
+        // Show selection summary
+        let selected_count = self.selected_vars.iter().filter(|&&x| x).count();
+        ui.horizontal(|ui| {
+            ui.label(format!("📊 Selected: {selected_count} variables"));
+            
+            if ui.button("✅ Select All Filtered").clicked() {
+                for var_name in &filtered_vars {
+                    if let Some(var_index) = self.variable_names.iter().position(|x| x == var_name) {
+                        if var_index < self.selected_vars.len() {
+                            self.selected_vars[var_index] = true;
+                        }
+                    }
+                }
             }
-        }
-        
-        // Apply all changes
-        for (var_index, selected) in temp_selections {
-            self.selected_vars[var_index] = selected;
-        }
-        
-        for (var_index, show_error) in temp_error_options {
-            self.show_error_for_var[var_index] = show_error;
-        }
-        
-        for (var_index, show_value) in temp_value_options {
-            self.show_value_for_var[var_index] = show_value;
-        }
+            
+            if ui.button("❌ Unselect All").clicked() {
+                for selection in &mut self.selected_vars {
+                    *selection = false;
+                }
+            }
+        });
         
         // Plot selected variables
         let selected_variables: Vec<(usize, &String)> = self.variable_names
@@ -411,9 +317,16 @@ impl CalibrationApp {
             .filter(|(i, _)| *i < self.selected_vars.len() && self.selected_vars[*i])
             .collect();
         
+        // Check if selection has changed to reset view
+        let selection_changed = self.selected_vars != self.prev_selected_vars;
+        if selection_changed {
+            self.prev_selected_vars = self.selected_vars.clone();
+        }
+        
         if !selected_variables.is_empty() {
             ui.separator();
             ui.label(RichText::new("📈 Selected Variables Plots").heading());
+            ui.separator();
             
             let colors = [
                 Color32::RED, Color32::BLUE, Color32::GREEN, Color32::from_rgb(255, 165, 0),
@@ -422,38 +335,44 @@ impl CalibrationApp {
             ];
             
             // Check if we have any error or value data to show
-            let has_error_data = selected_variables.iter().any(|(var_index, var_name)| {
-                *var_index < self.show_error_for_var.len() && 
-                self.show_error_for_var[*var_index] && 
+            let has_error_data = selected_variables.iter().any(|(_, var_name)| {
                 self.has_error_column(var_name)
             });
             
-            let has_value_data = selected_variables.iter().any(|(var_index, var_name)| {
-                *var_index < self.show_value_for_var.len() && 
-                self.show_value_for_var[*var_index] && 
+            let has_value_data = selected_variables.iter().any(|(_, var_name)| {
                 self.has_value_column(var_name)
             });
             
             // Show plots side by side
             ui.horizontal(|ui| {
+                let total_width = ui.available_width();
+                let plot_width = (total_width - 40.0) * 0.5;
+                ui.add_space(5.0); // Extra spacing between plots
                 // Error plot (left side)
                 if has_error_data {
                     ui.vertical(|ui| {
+                        ui.add_space(5.0); // Increased top padding
                         ui.label(RichText::new("🔴 Error Convergence").strong());
+                        ui.add_space(2.0); // Increased spacing after label
                         
-                        Plot::new("error_plot")
-                            .view_aspect(1.5)
-                            .height(350.0)
-                            .width(ui.available_width() * 0.48)
+                        let mut error_plot = Plot::new("error_plot")
+                            .view_aspect(2.0) // Increased aspect ratio for more horizontal space
+                            .height(380.0) // Increased height
+                            .width(plot_width) // Reduced width to add margins
                             .legend(egui_plot::Legend::default())
-                            .show(ui, |plot_ui| {
+                            .x_axis_label("Iteration")
+                            .y_axis_label("Absolute Error");
+                        
+                        // Reset view if selection changed
+                        if selection_changed {
+                            error_plot = error_plot.auto_bounds([true, true].into()).reset();
+                        }
+                        
+                        error_plot.show(ui, |plot_ui| {
                                 let mut plot_idx = 0;
                                 
-                                for (var_index, var_name) in &selected_variables {
-                                    if *var_index < self.show_error_for_var.len() && 
-                                       self.show_error_for_var[*var_index] && 
-                                       self.has_error_column(var_name) {
-                                        
+                                for (_, var_name) in &selected_variables {
+                                    if self.has_error_column(var_name) {
                                         if let Some(error_col) = self.get_error_column_name(var_name) {
                                             let points: PlotPoints = self.records
                                                 .iter()
@@ -478,27 +397,36 @@ impl CalibrationApp {
                 
                 // Add spacing between plots
                 if has_error_data && has_value_data {
+                    ui.add_space(2.0); // Extra spacing between plots
                     ui.separator();
+                    ui.add_space(2.0); // Extra spacing between plots
                 }
                 
                 // Value plot (right side)
                 if has_value_data {
                     ui.vertical(|ui| {
+                        ui.add_space(5.0); // Increased top padding
                         ui.label(RichText::new("🔵 Value Evolution").strong());
+                        ui.add_space(2.0); // Increased spacing after label
                         
-                        Plot::new("value_plot")
-                            .view_aspect(1.5)
-                            .height(350.0)
-                            .width(ui.available_width() * if has_error_data { 0.98 } else { 1.0 })
+                        let mut value_plot = Plot::new("value_plot")
+                            .view_aspect(2.0) // Increased aspect ratio for more horizontal space
+                            .height(380.0) // Increased height
+                            .width(plot_width) // Reduced width to add margins
                             .legend(egui_plot::Legend::default())
-                            .show(ui, |plot_ui| {
+                            .x_axis_label("Iteration")
+                            .y_axis_label("Value");
+                        
+                        // Reset view if selection changed
+                        if selection_changed {
+                            value_plot = value_plot.auto_bounds([true, true].into()).reset();
+                        }
+                        
+                        value_plot.show(ui, |plot_ui| {
                                 let mut plot_idx = 0;
                                 
-                                for (var_index, var_name) in &selected_variables {
-                                    if *var_index < self.show_value_for_var.len() && 
-                                       self.show_value_for_var[*var_index] && 
-                                       self.has_value_column(var_name) {
-                                        
+                                for (_, var_name) in &selected_variables {
+                                    if self.has_value_column(var_name) {
                                         if let Some(value_col) = self.get_value_column_name(var_name) {
                                             let points: PlotPoints = self.records
                                                 .iter()
@@ -519,6 +447,7 @@ impl CalibrationApp {
                                 }
                             });
                     });
+                    ui.add_space(100.0); // Extra spacing between plots
                 }
             });
         }
@@ -530,7 +459,7 @@ fn main() -> Result<(), eframe::Error> {
     
     let options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
-            .with_inner_size([1400.0, 800.0])
+            .with_inner_size([1600.0, 1000.0])
             .with_title("Calibration Report Visualizer"),
         ..Default::default()
     };
