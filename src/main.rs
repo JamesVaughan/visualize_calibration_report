@@ -564,7 +564,7 @@ impl CalibrationApp {
                         
                         // Reset view if selection changed
                         if selection_changed {
-                            error_plot = error_plot.auto_bounds([true, true].into()).reset();
+                            error_plot = error_plot.auto_bounds(egui::Vec2b::new(true, true)).reset();
                         }
                         
                         let error_plot_response = error_plot.show(ui, |plot_ui| {
@@ -580,10 +580,9 @@ impl CalibrationApp {
                                                 })
                                                 .collect();
                                             
-                                            let line = Line::new(points)
+                                            let line = Line::new((*var_name).clone(), points)
                                                 .color(colors[plot_idx % colors.len()])
-                                                .width(2.0)
-                                                .name(var_name);
+                                                .width(2.0);
                                             
                                             plot_ui.line(line);
                                             plot_idx += 1;
@@ -598,13 +597,13 @@ impl CalibrationApp {
                                 if let Err(e) = self.save_plot_csv(&selected_variables, "Error") {
                                     eprintln!("Failed to save CSV: {e}");
                                 }
-                                ui.close_menu();
+                                ui.close();
                             }
                             if ui.button("📸 Save as Image").clicked() {
                                 if let Err(e) = self.save_plot_image(&selected_variables, "Error", &colors, Some(&error_plot_response.transform.bounds()), ctx) {
                                     eprintln!("Failed to save image: {e}");
                                 }
-                                ui.close_menu();
+                                ui.close();
                             }
                         });
                     });
@@ -634,7 +633,7 @@ impl CalibrationApp {
                         
                         // Reset view if selection changed
                         if selection_changed {
-                            value_plot = value_plot.auto_bounds([true, true].into()).reset();
+                            value_plot = value_plot.auto_bounds(egui::Vec2b::new(true, true)).reset();
                         }
                         
                         let value_plot_response = value_plot.show(ui, |plot_ui| {
@@ -650,10 +649,9 @@ impl CalibrationApp {
                                                 })
                                                 .collect();
                                             
-                                            let line = Line::new(points)
+                                            let line = Line::new((*var_name).clone(), points)
                                                 .color(colors[plot_idx % colors.len()])
-                                                .width(2.0)
-                                                .name(var_name);
+                                                .width(2.0);
                                             
                                             plot_ui.line(line);
                                             plot_idx += 1;
@@ -668,13 +666,13 @@ impl CalibrationApp {
                                 if let Err(e) = self.save_plot_csv(&selected_variables, "Value") {
                                     eprintln!("Failed to save CSV: {e}");
                                 }
-                                ui.close_menu();
+                                ui.close();
                             }
                             if ui.button("📸 Save as Image").clicked() {
                                 if let Err(e) = self.save_plot_image(&selected_variables, "Value", &colors, Some(&value_plot_response.transform.bounds()), ctx) {
                                     eprintln!("Failed to save image: {e}");
                                 }
-                                ui.close_menu();
+                                ui.close();
                             }
                         });
                     });
