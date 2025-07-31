@@ -162,7 +162,7 @@ impl CalibrationApp {
         if let Some(path) = rfd::FileDialog::new()
             .add_filter("CSV Files", &["csv"])
             .set_file_name(&default_filename)
-            .set_title(&format!("Save {} Plot Data", plot_type))
+            .set_title(format!("Save {plot_type} Plot Data"))
             .save_file()
         {
             let mut writer = csv::Writer::from_path(path)?;
@@ -171,9 +171,9 @@ impl CalibrationApp {
             let mut header = vec!["Iteration".to_string()];
             for (_, var_name) in selected_variables {
                 if plot_type == "Error" && self.has_error_column(var_name) {
-                    header.push(format!("{}_Error", var_name));
+                    header.push(format!("{var_name}_Error"));
                 } else if plot_type == "Value" && self.has_value_column(var_name) {
-                    header.push(format!("{}_Value", var_name));
+                    header.push(format!("{var_name}_Value"));
                 }
             }
             writer.write_record(&header)?;
@@ -214,7 +214,7 @@ impl CalibrationApp {
         if let Some(path) = rfd::FileDialog::new()
             .add_filter("PNG Images", &["png"])
             .set_file_name(&default_filename)
-            .set_title(&format!("Save {} Plot Image", plot_type))
+            .set_title(format!("Save {plot_type} Plot Image"))
             .save_file()
         {
             use plotters::prelude::*;
@@ -285,7 +285,7 @@ impl CalibrationApp {
             };
             
             let mut chart = ChartBuilder::on(&root)
-                .caption(&format!("{} Convergence", plot_type), ("Arial", 60).into_font().color(&text_color))
+                .caption(format!("{plot_type} Convergence"), ("Arial", 60).into_font().color(&text_color))
                 .margin(40)
                 .x_label_area_size(100)
                 .y_label_area_size(160)
@@ -297,9 +297,9 @@ impl CalibrationApp {
                 .y_desc(if plot_type == "Error" { "Absolute Error" } else { "Value" })
                 .axis_desc_style(("Arial", 30).into_font().color(&text_color))
                 .label_style(("Arial", 24).into_font().color(&text_color))
-                .axis_style(&text_color)
-                .light_line_style(&grid_color)
-                .bold_line_style(&grid_color)
+                .axis_style(text_color)
+                .light_line_style(grid_color)
+                .bold_line_style(grid_color)
                 .draw()?;
             
             let mut plot_idx = 0;
@@ -344,8 +344,8 @@ impl CalibrationApp {
             }
             
             chart.configure_series_labels()
-                .background_style(&bg_color.mix(0.8))
-                .border_style(&text_color)
+                .background_style(bg_color.mix(0.8))
+                .border_style(text_color)
                 .label_font(("Arial", 24).into_font().color(&text_color))
                 .position(plotters::chart::SeriesLabelPosition::UpperRight)
                 .margin(20)
@@ -436,6 +436,29 @@ impl CalibrationApp {
         });
         
         ui.separator();
+        
+        // Get selected variables and create color mapping
+        let selected_variables: Vec<(usize, &String)> = self.variable_names
+            .iter()
+            .enumerate()
+            .filter(|(i, _)| *i < self.selected_vars.len() && self.selected_vars[*i])
+            .collect();
+        
+        let colors = [
+            Color32::RED, Color32::BLUE, Color32::GREEN, Color32::from_rgb(255, 165, 0),
+            Color32::from_rgb(128, 0, 128), Color32::from_rgb(165, 42, 42),
+            Color32::YELLOW, Color32::from_rgb(255, 192, 203), Color32::DARK_GRAY, Color32::BROWN,
+        ];
+        
+        // Create a mapping from variable name to color index for selected variables
+        let mut variable_color_map = std::collections::HashMap::new();
+        let mut color_idx = 0;
+        for (_, var_name) in &selected_variables {
+            if self.has_error_column(var_name) || self.has_value_column(var_name) {
+                variable_color_map.insert(var_name.as_str(), color_idx % colors.len());
+                color_idx += 1;
+            }
+        }
         // Variable selection and options in scrollable area
         egui::ScrollArea::vertical()
             .max_height(250.0)
@@ -466,6 +489,26 @@ impl CalibrationApp {
                                         ui.vertical(|ui| {
                                             // Main checkbox to select the variable
                                             let mut selected = self.selected_vars[var_index];
+                                            
+                                            // Style the checkbox based on selection and color mapping
+                                            if selected {
+                                                if let Some(&color_index) = variable_color_map.get(var_name.as_str()) {
+                                                    let graph_color = colors[color_index];
+                                                    
+                                                    // Create a custom checkbox style with the graph color
+                                                    let mut checkbox_style = ui.style().visuals.widgets.inactive;
+                                                    checkbox_style.bg_fill = graph_color;
+                                                    checkbox_style.bg_stroke = egui::Stroke::new(1.0, graph_color.gamma_multiply(0.8));
+                                                    
+                                                    let mut active_style = ui.style().visuals.widgets.active;
+                                                    active_style.bg_fill = graph_color;
+                                                    active_style.bg_stroke = egui::Stroke::new(2.0, graph_color.gamma_multiply(0.8));
+                                                    
+                                                    ui.style_mut().visuals.widgets.inactive = checkbox_style;
+                                                    ui.style_mut().visuals.widgets.active = active_style;
+                                                }
+                                            }
+                                            
                                             if ui.checkbox(&mut selected, format!("📈 {var_name}")).changed() {
                                                 self.selected_vars[var_index] = selected;
                                             }
@@ -510,12 +553,6 @@ impl CalibrationApp {
         });
         
         // Plot selected variables
-        let selected_variables: Vec<(usize, &String)> = self.variable_names
-            .iter()
-            .enumerate()
-            .filter(|(i, _)| *i < self.selected_vars.len() && self.selected_vars[*i])
-            .collect();
-        
         // Check if selection has changed to reset view
         let selection_changed = self.selected_vars != self.prev_selected_vars;
         if selection_changed {
@@ -526,12 +563,6 @@ impl CalibrationApp {
             ui.separator();
             ui.label(RichText::new("📈 Selected Variables Plots").heading());
             ui.separator();
-            
-            let colors = [
-                Color32::RED, Color32::BLUE, Color32::GREEN, Color32::from_rgb(255, 165, 0),
-                Color32::from_rgb(128, 0, 128), Color32::from_rgb(165, 42, 42),
-                Color32::YELLOW, Color32::from_rgb(255, 192, 203), Color32::DARK_GRAY, Color32::BROWN,
-            ];
             
             // Check if we have any error or value data to show
             let has_error_data = selected_variables.iter().any(|(_, var_name)| {
@@ -600,7 +631,7 @@ impl CalibrationApp {
                                 ui.close();
                             }
                             if ui.button("📸 Save as Image").clicked() {
-                                if let Err(e) = self.save_plot_image(&selected_variables, "Error", &colors, Some(&error_plot_response.transform.bounds()), ctx) {
+                                if let Err(e) = self.save_plot_image(&selected_variables, "Error", &colors, Some(error_plot_response.transform.bounds()), ctx) {
                                     eprintln!("Failed to save image: {e}");
                                 }
                                 ui.close();
@@ -669,7 +700,7 @@ impl CalibrationApp {
                                 ui.close();
                             }
                             if ui.button("📸 Save as Image").clicked() {
-                                if let Err(e) = self.save_plot_image(&selected_variables, "Value", &colors, Some(&value_plot_response.transform.bounds()), ctx) {
+                                if let Err(e) = self.save_plot_image(&selected_variables, "Value", &colors, Some(value_plot_response.transform.bounds()), ctx) {
                                     eprintln!("Failed to save image: {e}");
                                 }
                                 ui.close();
