@@ -1,0 +1,18 @@
+[package]
+name = "visualize_calibration_report"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+csv = "1.3"
+serde = { version = "1.0", features = ["derive"] }
+anyhow = "1.0"
+egui = "0.28"
+eframe = { version = "0.28", default-features = false, features = [
+    "accesskit",     # Make egui compatible with screen readers. NOTE: adds a lot of dependencies.
+    "default_fonts", # Embed the default egui fonts.
+    "glow",          # Use glow rendering backend. Alternative: "wgpu".
+    "persistence",   # Enable restoring app state when restarting the app.
+] }
+egui_plot = "0.28"
+env_logger = "0.11"
