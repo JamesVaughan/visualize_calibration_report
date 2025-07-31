@@ -18,18 +18,18 @@ struct CalibrationApp {
     records: Vec<CalibrationRecord>,
     error_columns: Vec<String>,
     value_columns: Vec<String>,
+    variable_names: Vec<String>, // Base variable names without Error:/Value: prefix
     
     // UI State
     file_path: String,
     file_loaded: bool,
     loading_error: Option<String>,
     
-    // Plot selection
-    selected_error_vars: Vec<bool>,
-    selected_value_vars: Vec<bool>,
+    // Plot selection - now per variable with option for error/value/both
+    selected_vars: Vec<bool>,
+    show_error_for_var: Vec<bool>,
+    show_value_for_var: Vec<bool>,
     filter_text: String,
-    show_errors: bool,
-    show_values: bool,
     
     // Statistics
     show_summary: bool,
@@ -47,14 +47,14 @@ impl Default for CalibrationApp {
             records: Vec::new(),
             error_columns: Vec::new(),
             value_columns: Vec::new(),
+            variable_names: Vec::new(),
             file_path: String::new(),
             file_loaded: false,
             loading_error: None,
-            selected_error_vars: Vec::new(),
-            selected_value_vars: Vec::new(),
+            selected_vars: Vec::new(),
+            show_error_for_var: Vec::new(),
+            show_value_for_var: Vec::new(),
             filter_text: String::new(),
-            show_errors: true,
-            show_values: false,
             show_summary: false,
             final_errors: Vec::new(),
             total_error_trend: Vec::new(),
@@ -66,6 +66,8 @@ impl Default for CalibrationApp {
 
 impl CalibrationApp {
     fn load_file(&mut self, path: String) -> Result<()> {
+        println!("Starting to load file: {}", path);
+        
         let file = File::open(&path)
             .with_context(|| format!("Failed to open file: {}", path))?;
         
@@ -74,11 +76,21 @@ impl CalibrationApp {
             .from_reader(file);
         
         let mut records: Vec<CalibrationRecord> = Vec::new();
+        let mut record_count = 0;
+        
         for result in rdr.deserialize() {
             let record: CalibrationRecord = result
-                .with_context(|| "Failed to parse CSV record")?;
+                .with_context(|| format!("Failed to parse CSV record at line {}", record_count + 2))?;
             records.push(record);
+            record_count += 1;
+            
+            // Add progress feedback for large files
+            if record_count % 100 == 0 {
+                println!("Loaded {} records...", record_count);
+            }
         }
+        
+        println!("Finished loading {} records", record_count);
         
         if records.is_empty() {
             return Err(anyhow::anyhow!("No records found in file"));
@@ -103,16 +115,37 @@ impl CalibrationApp {
         let final_errors = self.calculate_final_errors(&records, &error_columns);
         let total_error_trend = self.calculate_total_error_trend(&records, &error_columns);
         
+        // Create unified variable names (base names without Error:/Value: prefix)
+        let mut variable_names = std::collections::HashSet::new();
+        
+        for col in &error_columns {
+            if let Some(base_name) = col.strip_prefix("Error:") {
+                variable_names.insert(base_name.trim().to_string());
+            }
+        }
+        
+        for col in &value_columns {
+            if let Some(base_name) = col.strip_prefix("Value:") {
+                variable_names.insert(base_name.trim().to_string());
+            }
+        }
+        
+        let mut variable_names: Vec<String> = variable_names.into_iter().collect();
+        variable_names.sort();
+        
         // Initialize selection vectors
-        let selected_error_vars = vec![false; error_columns.len()];
-        let selected_value_vars = vec![false; value_columns.len()];
+        let selected_vars = vec![false; variable_names.len()];
+        let show_error_for_var = vec![true; variable_names.len()];
+        let show_value_for_var = vec![false; variable_names.len()];
         
         // Update state
         self.records = records;
         self.error_columns = error_columns;
         self.value_columns = value_columns;
-        self.selected_error_vars = selected_error_vars;
-        self.selected_value_vars = selected_value_vars;
+        self.variable_names = variable_names;
+        self.selected_vars = selected_vars;
+        self.show_error_for_var = show_error_for_var;
+        self.show_value_for_var = show_value_for_var;
         self.final_errors = final_errors;
         self.total_error_trend = total_error_trend;
         self.file_loaded = true;
@@ -167,6 +200,30 @@ impl CalibrationApp {
         
         filtered
     }
+    
+    fn has_error_column(&self, var_name: &str) -> bool {
+        self.error_columns.iter().any(|col| {
+            col.strip_prefix("Error:").map(|s| s.trim()) == Some(var_name)
+        })
+    }
+    
+    fn has_value_column(&self, var_name: &str) -> bool {
+        self.value_columns.iter().any(|col| {
+            col.strip_prefix("Value:").map(|s| s.trim()) == Some(var_name)
+        })
+    }
+    
+    fn get_error_column_name(&self, var_name: &str) -> Option<String> {
+        self.error_columns.iter().find(|col| {
+            col.strip_prefix("Error:").map(|s| s.trim()) == Some(var_name)
+        }).cloned()
+    }
+    
+    fn get_value_column_name(&self, var_name: &str) -> Option<String> {
+        self.value_columns.iter().find(|col| {
+            col.strip_prefix("Value:").map(|s| s.trim()) == Some(var_name)
+        }).cloned()
+    }
 }
 
 impl eframe::App for CalibrationApp {
@@ -179,10 +236,27 @@ impl eframe::App for CalibrationApp {
             ui.horizontal(|ui| {
                 ui.label("CSV File:");
                 ui.text_edit_singleline(&mut self.file_path);
-                if ui.button("📁 Load File").clicked() {
-                    if let Err(e) = self.load_file(self.file_path.clone()) {
-                        self.loading_error = Some(e.to_string());
-                        self.file_loaded = false;
+                if ui.button("📁 Browse & Load File").clicked() {
+                    if let Some(path) = rfd::FileDialog::new()
+                        .add_filter("CSV Files", &["csv"])
+                        .add_filter("All Files", &["*"])
+                        .set_title("Select Calibration CSV File")
+                        .pick_file()
+                    {
+                        self.file_path = path.display().to_string();
+                        if let Err(e) = self.load_file(self.file_path.clone()) {
+                            self.loading_error = Some(e.to_string());
+                            self.file_loaded = false;
+                        }
+                    }
+                }
+                
+                if !self.file_path.is_empty() {
+                    if ui.button("🔄 Reload").clicked() {
+                        if let Err(e) = self.load_file(self.file_path.clone()) {
+                            self.loading_error = Some(e.to_string());
+                            self.file_loaded = false;
+                        }
                     }
                 }
             });
@@ -226,11 +300,7 @@ impl eframe::App for CalibrationApp {
             
             ui.separator();
             
-            // Plot type selection
-            ui.horizontal(|ui| {
-                ui.checkbox(&mut self.show_errors, "🔴 Error Convergence");
-                ui.checkbox(&mut self.show_values, "🔵 Value Evolution");
-            });
+            // Plot type selection - removed since we now show both per variable
             
             // Filter controls
             ui.horizontal(|ui| {
@@ -245,13 +315,7 @@ impl eframe::App for CalibrationApp {
             
             // Variable selection and plotting
             egui::ScrollArea::vertical().show(ui, |ui| {
-                if self.show_errors {
-                    self.show_error_section(ui);
-                }
-                
-                if self.show_values {
-                    self.show_value_section(ui);
-                }
+                self.show_variables_section(ui);
                 
                 // Total error trend (always show if data is loaded)
                 if !self.total_error_trend.is_empty() {
@@ -274,166 +338,143 @@ impl eframe::App for CalibrationApp {
 }
 
 impl CalibrationApp {
-    fn show_error_section(&mut self, ui: &mut Ui) {
-        ui.label(RichText::new("🔴 Error Variables").heading());
+    fn show_variables_section(&mut self, ui: &mut Ui) {
+        ui.label(RichText::new("� Variables").heading());
         
-        let filtered_columns = self.filter_columns(&self.error_columns);
+        let filtered_vars = self.filter_columns(&self.variable_names);
         
-        if filtered_columns.is_empty() {
-            ui.label("No error variables match the current filter");
+        if filtered_vars.is_empty() {
+            ui.label("No variables match the current filter");
             return;
         }
         
-        // Variable selection checkboxes
+        // Variable selection and options
         let mut temp_selections = Vec::new();
+        let mut temp_error_options = Vec::new();
+        let mut temp_value_options = Vec::new();
         
-        ui.horizontal_wrapped(|ui| {
-            for col in filtered_columns.iter() {
-                let clean_name = col.strip_prefix("Error:").unwrap_or(col);
-                let mut selected = false;
-                if let Some(original_index) = self.error_columns.iter().position(|x| x == col) {
-                    if original_index < self.selected_error_vars.len() {
-                        selected = self.selected_error_vars[original_index];
-                    }
+        for var_name in filtered_vars.iter() {
+            if let Some(var_index) = self.variable_names.iter().position(|x| x == var_name) {
+                if var_index >= self.selected_vars.len() {
+                    continue;
                 }
-                if ui.checkbox(&mut selected, clean_name).changed() {
-                    temp_selections.push((col.clone(), selected));
-                }
-            }
-        });
-        
-        // Apply checkbox changes
-        for (col, selected) in temp_selections {
-            if let Some(original_index) = self.error_columns.iter().position(|x| x == &col) {
-                if original_index < self.selected_error_vars.len() {
-                    self.selected_error_vars[original_index] = selected;
-                }
+                
+                ui.group(|ui| {
+                    ui.horizontal(|ui| {
+                        // Main checkbox to select the variable
+                        let mut selected = self.selected_vars[var_index];
+                        if ui.checkbox(&mut selected, format!("📈 {}", var_name)).changed() {
+                            temp_selections.push((var_index, selected));
+                        }
+                        
+                        if selected {
+                            ui.separator();
+                            
+                            // Error checkbox (only if error column exists)
+                            if self.has_error_column(var_name) {
+                                let mut show_error = self.show_error_for_var[var_index];
+                                if ui.checkbox(&mut show_error, "🔴 Error").changed() {
+                                    temp_error_options.push((var_index, show_error));
+                                }
+                            }
+                            
+                            // Value checkbox (only if value column exists)
+                            if self.has_value_column(var_name) {
+                                let mut show_value = self.show_value_for_var[var_index];
+                                if ui.checkbox(&mut show_value, "🔵 Value").changed() {
+                                    temp_value_options.push((var_index, show_value));
+                                }
+                            }
+                        }
+                    });
+                });
             }
         }
         
+        // Apply all changes
+        for (var_index, selected) in temp_selections {
+            self.selected_vars[var_index] = selected;
+        }
+        
+        for (var_index, show_error) in temp_error_options {
+            self.show_error_for_var[var_index] = show_error;
+        }
+        
+        for (var_index, show_value) in temp_value_options {
+            self.show_value_for_var[var_index] = show_value;
+        }
+        
         // Plot selected variables
-        let selected_columns: Vec<&String> = self.error_columns
+        let selected_variables: Vec<(usize, &String)> = self.variable_names
             .iter()
             .enumerate()
-            .filter_map(|(i, col)| {
-                if i < self.selected_error_vars.len() && self.selected_error_vars[i] {
-                    Some(col)
-                } else {
-                    None
-                }
-            })
+            .filter(|(i, _)| *i < self.selected_vars.len() && self.selected_vars[*i])
             .collect();
         
-        if !selected_columns.is_empty() {
+        if !selected_variables.is_empty() {
+            ui.separator();
+            ui.label(RichText::new("📈 Selected Variables Plot").heading());
+            
             let colors = [
                 Color32::RED, Color32::BLUE, Color32::GREEN, Color32::from_rgb(255, 165, 0),
                 Color32::from_rgb(128, 0, 128), Color32::from_rgb(165, 42, 42),
                 Color32::YELLOW, Color32::from_rgb(255, 192, 203), Color32::DARK_GRAY, Color32::BROWN,
             ];
             
-            Plot::new("error_convergence_plot")
+            Plot::new("variables_plot")
                 .view_aspect(2.0)
-                .height(300.0)
+                .height(400.0)
                 .legend(egui_plot::Legend::default())
                 .show(ui, |plot_ui| {
-                    for (plot_idx, col) in selected_columns.iter().enumerate() {
-                        let points: PlotPoints = self.records
-                            .iter()
-                            .filter_map(|r| {
-                                r.data.get(*col).map(|&val| [r.iteration as f64, val.abs()])
-                            })
-                            .collect();
+                    let mut plot_idx = 0;
+                    
+                    for (var_index, var_name) in &selected_variables {
+                        // Plot error if selected and available
+                        if *var_index < self.show_error_for_var.len() && 
+                           self.show_error_for_var[*var_index] && 
+                           self.has_error_column(var_name) {
+                            
+                            if let Some(error_col) = self.get_error_column_name(var_name) {
+                                let points: PlotPoints = self.records
+                                    .iter()
+                                    .filter_map(|r| {
+                                        r.data.get(&error_col).map(|&val| [r.iteration as f64, val.abs()])
+                                    })
+                                    .collect();
+                                
+                                let line = Line::new(points)
+                                    .color(colors[plot_idx % colors.len()])
+                                    .width(2.0)
+                                    .name(format!("{} (Error)", var_name));
+                                
+                                plot_ui.line(line);
+                                plot_idx += 1;
+                            }
+                        }
                         
-                        let clean_name = col.strip_prefix("Error:").unwrap_or(col);
-                        let line = Line::new(points)
-                            .color(colors[plot_idx % colors.len()])
-                            .width(2.0)
-                            .name(clean_name);
-                        
-                        plot_ui.line(line);
-                    }
-                });
-        }
-    }
-    
-    fn show_value_section(&mut self, ui: &mut Ui) {
-        ui.separator();
-        ui.label(RichText::new("🔵 Value Variables").heading());
-        
-        let filtered_columns = self.filter_columns(&self.value_columns);
-        
-        if filtered_columns.is_empty() {
-            ui.label("No value variables match the current filter");
-            return;
-        }
-        
-        // Variable selection checkboxes
-        let mut temp_selections = Vec::new();
-        
-        ui.horizontal_wrapped(|ui| {
-            for col in filtered_columns.iter() {
-                let clean_name = col.strip_prefix("Value:").unwrap_or(col);
-                let mut selected = false;
-                if let Some(original_index) = self.value_columns.iter().position(|x| x == col) {
-                    if original_index < self.selected_value_vars.len() {
-                        selected = self.selected_value_vars[original_index];
-                    }
-                }
-                if ui.checkbox(&mut selected, clean_name).changed() {
-                    temp_selections.push((col.clone(), selected));
-                }
-            }
-        });
-        
-        // Apply checkbox changes
-        for (col, selected) in temp_selections {
-            if let Some(original_index) = self.value_columns.iter().position(|x| x == &col) {
-                if original_index < self.selected_value_vars.len() {
-                    self.selected_value_vars[original_index] = selected;
-                }
-            }
-        }
-        
-        // Plot selected variables
-        let selected_columns: Vec<&String> = self.value_columns
-            .iter()
-            .enumerate()
-            .filter_map(|(i, col)| {
-                if i < self.selected_value_vars.len() && self.selected_value_vars[i] {
-                    Some(col)
-                } else {
-                    None
-                }
-            })
-            .collect();
-        
-        if !selected_columns.is_empty() {
-            let colors = [
-                Color32::BLUE, Color32::GREEN, Color32::RED, Color32::from_rgb(255, 165, 0),
-                Color32::from_rgb(128, 0, 128), Color32::from_rgb(165, 42, 42),
-                Color32::YELLOW, Color32::from_rgb(255, 192, 203), Color32::DARK_GRAY, Color32::BROWN,
-            ];
-            
-            Plot::new("value_evolution_plot")
-                .view_aspect(2.0)
-                .height(300.0)
-                .legend(egui_plot::Legend::default())
-                .show(ui, |plot_ui| {
-                    for (plot_idx, col) in selected_columns.iter().enumerate() {
-                        let points: PlotPoints = self.records
-                            .iter()
-                            .filter_map(|r| {
-                                r.data.get(*col).map(|&val| [r.iteration as f64, val])
-                            })
-                            .collect();
-                        
-                        let clean_name = col.strip_prefix("Value:").unwrap_or(col);
-                        let line = Line::new(points)
-                            .color(colors[plot_idx % colors.len()])
-                            .width(2.0)
-                            .name(clean_name);
-                        
-                        plot_ui.line(line);
+                        // Plot value if selected and available
+                        if *var_index < self.show_value_for_var.len() && 
+                           self.show_value_for_var[*var_index] && 
+                           self.has_value_column(var_name) {
+                            
+                            if let Some(value_col) = self.get_value_column_name(var_name) {
+                                let points: PlotPoints = self.records
+                                    .iter()
+                                    .filter_map(|r| {
+                                        r.data.get(&value_col).map(|&val| [r.iteration as f64, val])
+                                    })
+                                    .collect();
+                                
+                                let line = Line::new(points)
+                                    .color(colors[plot_idx % colors.len()])
+                                    .width(2.0)
+                                    .style(egui_plot::LineStyle::Dashed { length: 10.0 })
+                                    .name(format!("{} (Value)", var_name));
+                                
+                                plot_ui.line(line);
+                                plot_idx += 1;
+                            }
+                        }
                     }
                 });
         }
@@ -454,16 +495,8 @@ fn main() -> Result<(), eframe::Error> {
         "Calibration Report Visualizer",
         options,
         Box::new(|_cc| {
-            // Set default file path if available
-            let mut app = CalibrationApp::default();
-            
-            // Try to auto-load the calibration file if it exists
-            let default_path = "Z:\\CalibrationReport.csv";
-            if std::path::Path::new(default_path).exists() {
-                app.file_path = default_path.to_string();
-                let _ = app.load_file(app.file_path.clone());
-            }
-            
+            // Create app with no file operations at startup
+            let app = CalibrationApp::default();
             Ok(Box::new(app))
         }),
     )
