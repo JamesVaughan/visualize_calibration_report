@@ -155,6 +155,205 @@ impl CalibrationApp {
             col.strip_prefix("Value:").map(|s| s.trim()) == Some(var_name)
         }).cloned()
     }
+    
+    fn save_plot_csv(&self, selected_variables: &[(usize, &String)], plot_type: &str) -> Result<()> {
+        let default_filename = format!("{}_plot_data.csv", plot_type.to_lowercase());
+        
+        if let Some(path) = rfd::FileDialog::new()
+            .add_filter("CSV Files", &["csv"])
+            .set_file_name(&default_filename)
+            .set_title(&format!("Save {} Plot Data", plot_type))
+            .save_file()
+        {
+            let mut writer = csv::Writer::from_path(path)?;
+            
+            // Write header
+            let mut header = vec!["Iteration".to_string()];
+            for (_, var_name) in selected_variables {
+                if plot_type == "Error" && self.has_error_column(var_name) {
+                    header.push(format!("{}_Error", var_name));
+                } else if plot_type == "Value" && self.has_value_column(var_name) {
+                    header.push(format!("{}_Value", var_name));
+                }
+            }
+            writer.write_record(&header)?;
+            
+            // Write data
+            for record in &self.records {
+                let mut row = vec![record.iteration.to_string()];
+                for (_, var_name) in selected_variables {
+                    if plot_type == "Error" && self.has_error_column(var_name) {
+                        if let Some(error_col) = self.get_error_column_name(var_name) {
+                            if let Some(&val) = record.data.get(&error_col) {
+                                row.push(val.abs().to_string());
+                            } else {
+                                row.push("".to_string());
+                            }
+                        }
+                    } else if plot_type == "Value" && self.has_value_column(var_name) {
+                        if let Some(value_col) = self.get_value_column_name(var_name) {
+                            if let Some(&val) = record.data.get(&value_col) {
+                                row.push(val.to_string());
+                            } else {
+                                row.push("".to_string());
+                            }
+                        }
+                    }
+                }
+                writer.write_record(&row)?;
+            }
+            
+            writer.flush()?;
+        }
+        Ok(())
+    }
+    
+    fn save_plot_image(&self, selected_variables: &[(usize, &String)], plot_type: &str, colors: &[Color32], plot_bounds: Option<&egui_plot::PlotBounds>, ctx: &egui::Context) -> Result<()> {
+        let default_filename = format!("{}_plot.png", plot_type.to_lowercase());
+        
+        if let Some(path) = rfd::FileDialog::new()
+            .add_filter("PNG Images", &["png"])
+            .set_file_name(&default_filename)
+            .set_title(&format!("Save {} Plot Image", plot_type))
+            .save_file()
+        {
+            use plotters::prelude::*;
+            
+            // Detect current theme from egui context
+            let is_dark_mode = ctx.style().visuals.dark_mode;
+            let bg_color = if is_dark_mode {
+                RGBColor(32, 32, 32) // Dark background
+            } else {
+                WHITE // Light background
+            };
+            let text_color = if is_dark_mode {
+                RGBColor(255, 255, 255) // White text for dark mode
+            } else {
+                RGBColor(0, 0, 0) // Black text for light mode
+            };
+            let grid_color = if is_dark_mode {
+                RGBColor(64, 64, 64) // Light gray grid lines for dark mode
+            } else {
+                RGBColor(128, 128, 128) // Dark gray grid lines for light mode
+            };
+            
+            let root = BitMapBackend::new(&path, (1600, 1200)).into_drawing_area();
+            root.fill(&bg_color)?;
+            
+            // Use plot bounds if provided, otherwise calculate from data
+            let (x_range, y_range) = if let Some(bounds) = plot_bounds {
+                let x_min = bounds.min()[0];
+                let x_max = bounds.max()[0];
+                let y_min = bounds.min()[1];
+                let y_max = bounds.max()[1];
+                (x_min..x_max, y_min..y_max)
+            } else {
+                // Fallback to calculating from all data
+                let x_range = 0f64..self.records.len() as f64;
+                let y_range = {
+                    let mut min_val = f64::INFINITY;
+                    let mut max_val = f64::NEG_INFINITY;
+                    
+                    for (_, var_name) in selected_variables {
+                        if plot_type == "Error" && self.has_error_column(var_name) {
+                            if let Some(error_col) = self.get_error_column_name(var_name) {
+                                for record in &self.records {
+                                    if let Some(&val) = record.data.get(&error_col) {
+                                        let abs_val = val.abs();
+                                        min_val = min_val.min(abs_val);
+                                        max_val = max_val.max(abs_val);
+                                    }
+                                }
+                            }
+                        } else if plot_type == "Value" && self.has_value_column(var_name) {
+                            if let Some(value_col) = self.get_value_column_name(var_name) {
+                                for record in &self.records {
+                                    if let Some(&val) = record.data.get(&value_col) {
+                                        min_val = min_val.min(val);
+                                        max_val = max_val.max(val);
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    
+                    let range = max_val - min_val;
+                    let margin = range * 0.1;
+                    (min_val - margin)..(max_val + margin)
+                };
+                (x_range, y_range)
+            };
+            
+            let mut chart = ChartBuilder::on(&root)
+                .caption(&format!("{} Convergence", plot_type), ("Arial", 60).into_font().color(&text_color))
+                .margin(40)
+                .x_label_area_size(100)
+                .y_label_area_size(160)
+                .build_cartesian_2d(x_range, y_range)?;
+            
+            chart
+                .configure_mesh()
+                .x_desc("Iteration")
+                .y_desc(if plot_type == "Error" { "Absolute Error" } else { "Value" })
+                .axis_desc_style(("Arial", 30).into_font().color(&text_color))
+                .label_style(("Arial", 24).into_font().color(&text_color))
+                .axis_style(&text_color)
+                .light_line_style(&grid_color)
+                .bold_line_style(&grid_color)
+                .draw()?;
+            
+            let mut plot_idx = 0;
+            for (_, var_name) in selected_variables {
+                if plot_type == "Error" && self.has_error_column(var_name) {
+                    if let Some(error_col) = self.get_error_column_name(var_name) {
+                        let points: Vec<(f64, f64)> = self.records
+                            .iter()
+                            .filter_map(|r| {
+                                r.data.get(&error_col).map(|&val| (r.iteration as f64, val.abs()))
+                            })
+                            .collect();
+                        
+                        let color = colors[plot_idx % colors.len()];
+                        let rgb_color = RGBColor(color.r(), color.g(), color.b());
+                        
+                        chart.draw_series(LineSeries::new(points, &rgb_color))?
+                            .label(*var_name)
+                            .legend(move |(x, y)| PathElement::new(vec![(x, y), (x + 10, y)], rgb_color));
+                        
+                        plot_idx += 1;
+                    }
+                } else if plot_type == "Value" && self.has_value_column(var_name) {
+                    if let Some(value_col) = self.get_value_column_name(var_name) {
+                        let points: Vec<(f64, f64)> = self.records
+                            .iter()
+                            .filter_map(|r| {
+                                r.data.get(&value_col).map(|&val| (r.iteration as f64, val))
+                            })
+                            .collect();
+                        
+                        let color = colors[plot_idx % colors.len()];
+                        let rgb_color = RGBColor(color.r(), color.g(), color.b());
+                        
+                        chart.draw_series(LineSeries::new(points, &rgb_color))?
+                            .label(*var_name)
+                            .legend(move |(x, y)| PathElement::new(vec![(x, y), (x + 10, y)], rgb_color));
+                        
+                        plot_idx += 1;
+                    }
+                }
+            }
+            
+            chart.configure_series_labels()
+                .background_style(&bg_color.mix(0.8))
+                .border_style(&text_color)
+                .label_font(("Arial", 24).into_font().color(&text_color))
+                .position(plotters::chart::SeriesLabelPosition::UpperRight)
+                .margin(20)
+                .draw()?;
+            root.present()?;
+        }
+        Ok(())
+    }
 }
 
 impl eframe::App for CalibrationApp {
@@ -211,14 +410,14 @@ impl eframe::App for CalibrationApp {
             
             // Variable selection and plotting
             egui::ScrollArea::vertical().show(ui, |ui| {
-                self.show_variables_section(ui);
+                self.show_variables_section(ui, ctx);
             });
         });
     }
 }
 
 impl CalibrationApp {
-    fn show_variables_section(&mut self, ui: &mut Ui) {
+    fn show_variables_section(&mut self, ui: &mut Ui, ctx: &egui::Context) {
         ui.label(RichText::new("Variables").heading());
         
         let filtered_vars = self.filter_columns(&self.variable_names);
@@ -352,23 +551,23 @@ impl CalibrationApp {
                 if has_error_data {
                     ui.vertical(|ui| {
                         ui.add_space(5.0); // Increased top padding
-                        ui.label(RichText::new("🔴 Error Convergence").strong());
+                        ui.label(RichText::new("🔴 Error").strong());
                         ui.add_space(2.0); // Increased spacing after label
                         
                         let mut error_plot = Plot::new("error_plot")
                             .view_aspect(2.0) // Increased aspect ratio for more horizontal space
-                            .height(380.0) // Increased height
+                            .height(450.0) // Increased height
                             .width(plot_width) // Reduced width to add margins
                             .legend(egui_plot::Legend::default())
                             .x_axis_label("Iteration")
-                            .y_axis_label("Absolute Error");
+                            .y_axis_label("Error");
                         
                         // Reset view if selection changed
                         if selection_changed {
                             error_plot = error_plot.auto_bounds([true, true].into()).reset();
                         }
                         
-                        error_plot.show(ui, |plot_ui| {
+                        let error_plot_response = error_plot.show(ui, |plot_ui| {
                                 let mut plot_idx = 0;
                                 
                                 for (_, var_name) in &selected_variables {
@@ -392,6 +591,22 @@ impl CalibrationApp {
                                     }
                                 }
                             });
+                        
+                        // Handle right-click context menu for error plot
+                        error_plot_response.response.context_menu(|ui| {
+                            if ui.button("💾 Save as CSV").clicked() {
+                                if let Err(e) = self.save_plot_csv(&selected_variables, "Error") {
+                                    eprintln!("Failed to save CSV: {e}");
+                                }
+                                ui.close_menu();
+                            }
+                            if ui.button("📸 Save as Image").clicked() {
+                                if let Err(e) = self.save_plot_image(&selected_variables, "Error", &colors, Some(&error_plot_response.transform.bounds()), ctx) {
+                                    eprintln!("Failed to save image: {e}");
+                                }
+                                ui.close_menu();
+                            }
+                        });
                     });
                 }
                 
@@ -406,12 +621,12 @@ impl CalibrationApp {
                 if has_value_data {
                     ui.vertical(|ui| {
                         ui.add_space(5.0); // Increased top padding
-                        ui.label(RichText::new("🔵 Value Evolution").strong());
+                        ui.label(RichText::new("🔵 Value").strong());
                         ui.add_space(2.0); // Increased spacing after label
                         
                         let mut value_plot = Plot::new("value_plot")
                             .view_aspect(2.0) // Increased aspect ratio for more horizontal space
-                            .height(380.0) // Increased height
+                            .height(450.0) // Increased height
                             .width(plot_width) // Reduced width to add margins
                             .legend(egui_plot::Legend::default())
                             .x_axis_label("Iteration")
@@ -422,7 +637,7 @@ impl CalibrationApp {
                             value_plot = value_plot.auto_bounds([true, true].into()).reset();
                         }
                         
-                        value_plot.show(ui, |plot_ui| {
+                        let value_plot_response = value_plot.show(ui, |plot_ui| {
                                 let mut plot_idx = 0;
                                 
                                 for (_, var_name) in &selected_variables {
@@ -446,6 +661,22 @@ impl CalibrationApp {
                                     }
                                 }
                             });
+                        
+                        // Handle right-click context menu for value plot
+                        value_plot_response.response.context_menu(|ui| {
+                            if ui.button("💾 Save as CSV").clicked() {
+                                if let Err(e) = self.save_plot_csv(&selected_variables, "Value") {
+                                    eprintln!("Failed to save CSV: {e}");
+                                }
+                                ui.close_menu();
+                            }
+                            if ui.button("📸 Save as Image").clicked() {
+                                if let Err(e) = self.save_plot_image(&selected_variables, "Value", &colors, Some(&value_plot_response.transform.bounds()), ctx) {
+                                    eprintln!("Failed to save image: {e}");
+                                }
+                                ui.close_menu();
+                            }
+                        });
                     });
                     ui.add_space(100.0); // Extra spacing between plots
                 }
