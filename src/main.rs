@@ -14,7 +14,6 @@ struct CalibrationRecord {
     data: HashMap<String, f64>,
 }
 
-#[derive(Default)]
 struct CalibrationApp {
     records: Vec<CalibrationRecord>,
     error_columns: Vec<String>,
@@ -30,10 +29,39 @@ struct CalibrationApp {
     selected_vars: Vec<bool>,
     prev_selected_vars: Vec<bool>, // Track previous selection to detect changes
     filter_text: String,
+    
+    // Theme state
+    is_dark_mode: Option<bool>, // None = follow system, Some(true) = force dark, Some(false) = force light
+}
+
+impl Default for CalibrationApp {
+    fn default() -> Self {
+        Self {
+            records: Vec::new(),
+            error_columns: Vec::new(),
+            value_columns: Vec::new(),
+            variable_names: Vec::new(),
+            file_path: String::new(),
+            file_loaded: false,
+            loading_error: None,
+            selected_vars: Vec::new(),
+            prev_selected_vars: Vec::new(),
+            filter_text: String::new(),
+            is_dark_mode: None, // Start with system default
+        }
+    }
 }
 
 
 impl CalibrationApp {
+    fn apply_theme(&self, ctx: &egui::Context) {
+        match self.is_dark_mode {
+            Some(true) => ctx.set_visuals(egui::Visuals::dark()),
+            Some(false) => ctx.set_visuals(egui::Visuals::light()),
+            None => ctx.set_visuals(egui::Visuals::default()),
+        }
+    }
+    
     fn load_file(&mut self, path: String) -> Result<()> {
         println!("Starting to load file: {path}");
         
@@ -357,8 +385,34 @@ impl CalibrationApp {
 
 impl eframe::App for CalibrationApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+        // Apply theme at the beginning of each frame
+        self.apply_theme(ctx);
+        
         egui::CentralPanel::default().show(ctx, |ui| {
-            ui.heading("📊 Calibration Report Visualizer");
+            // Header with title and theme toggle
+            ui.horizontal(|ui| {
+                ui.heading("📊 Calibration Report Visualizer");
+                
+                // Push the theme toggle to the right
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    // Theme toggle button
+                    let theme_text = match self.is_dark_mode {
+                        Some(true) => "🌙 Dark",
+                        Some(false) => "💡 Light", 
+                        None => "🔄 System",
+                    };
+                    
+                    let theme_button = ui.button(theme_text);
+                    if theme_button.clicked() {
+                        self.is_dark_mode = match self.is_dark_mode {
+                            None => Some(true),        // System -> Dark
+                            Some(true) => Some(false), // Dark -> Light
+                            Some(false) => None,       // Light -> System
+                        };
+                    }
+                    theme_button.on_hover_text("Click to cycle between System, Dark, and Light themes");
+                });
+            });
             ui.separator();
             
             // File loading section
