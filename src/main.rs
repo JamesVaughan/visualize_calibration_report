@@ -185,7 +185,7 @@ impl CalibrationApp {
                     if plot_type == "Error" && self.has_error_column(var_name) {
                         if let Some(error_col) = self.get_error_column_name(var_name) {
                             if let Some(&val) = record.data.get(&error_col) {
-                                row.push(val.abs().to_string());
+                                row.push(val.to_string());
                             } else {
                                 row.push("".to_string());
                             }
@@ -259,9 +259,8 @@ impl CalibrationApp {
                             if let Some(error_col) = self.get_error_column_name(var_name) {
                                 for record in &self.records {
                                     if let Some(&val) = record.data.get(&error_col) {
-                                        let abs_val = val.abs();
-                                        min_val = min_val.min(abs_val);
-                                        max_val = max_val.max(abs_val);
+                                        min_val = min_val.min(val);
+                                        max_val = max_val.max(val);
                                     }
                                 }
                             }
@@ -309,7 +308,7 @@ impl CalibrationApp {
                         let points: Vec<(f64, f64)> = self.records
                             .iter()
                             .filter_map(|r| {
-                                r.data.get(&error_col).map(|&val| (r.iteration as f64, val.abs()))
+                                r.data.get(&error_col).map(|&val| (r.iteration as f64, val))
                             })
                             .collect();
                         
@@ -432,7 +431,7 @@ impl CalibrationApp {
         
         // Show variable count
         ui.horizontal(|ui| {
-            ui.label(format!("� Showing {total_vars} variables"));
+            ui.label(format!("📊 Showing {total_vars} variables"));
         });
         
         ui.separator();
@@ -607,11 +606,11 @@ impl CalibrationApp {
                                             let points: PlotPoints = self.records
                                                 .iter()
                                                 .filter_map(|r| {
-                                                    r.data.get(&error_col).map(|&val| [r.iteration as f64, val.abs()])
+                                                    r.data.get(&error_col).map(|&val| [r.iteration as f64, val])
                                                 })
                                                 .collect();
                                             
-                                            let line = Line::new((*var_name).clone(), points)
+                                            let line = Line::new(var_name.as_str(), points)
                                                 .color(colors[plot_idx % colors.len()])
                                                 .width(2.0);
                                             
@@ -680,7 +679,7 @@ impl CalibrationApp {
                                                 })
                                                 .collect();
                                             
-                                            let line = Line::new((*var_name).clone(), points)
+                                            let line = Line::new(var_name.as_str(), points)
                                                 .color(colors[plot_idx % colors.len()])
                                                 .width(2.0);
                                             
