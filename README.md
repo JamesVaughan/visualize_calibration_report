@@ -1,49 +1,69 @@
 # Calibration Report Visualizer
 
-A Rust tool for visualizing calibration reports from the Tasha2Engine. This tool can process CSV files containing calibration data with iterations, error values, and parameter values.
+A professional interactive GUI tool for visualizing calibration reports from the XTMF Automated Calibration Framework. This application provides comprehensive analysis and visualization capabilities for calibration convergence data.
 
 ## Features
 
-- **Error Convergence Analysis**: Plot how error values change over iterations
-- **Parameter Value Evolution**: Visualize how parameter values evolve during calibration
-- **Summary Statistics**: Generate comprehensive summaries of the calibration process
-- **Error Distribution**: Plot total absolute error distribution over iterations
+### 📊 Interactive GUI
+- **Modern Interface**: Built with egui/eframe for a responsive, native-feeling GUI
+- **Dynamic Layout**: Automatically adjusts column layout based on window size
+- **Theme Support**: Automatically detects and respects system dark/light mode preferences
+- **File Management**: Browse and load CSV files with native file dialogs
+
+### 📈 Advanced Visualization
+- **Side-by-Side Plotting**: Separate error and value plots for clear comparison
+- **Color-Coded Variables**: Each selected variable gets a unique color across UI and plots
+- **Interactive Plots**: Zoom, pan, and explore data with full interactivity
+- **Professional Legends**: Positioned legends with background styling
+- **Axis Labels**: Clear iteration and value/error axis labeling
+
+### 🎛️ Variable Management
+- **Smart Filtering**: Filter variables by name with comma-separated search terms
+- **Multi-Column Selection**: Dynamic checkbox layout optimized for screen width
+- **Visual Color Mapping**: Checkbox backgrounds match graph line colors for selected variables
+- **Bulk Operations**: Select all filtered variables or unselect all with one click
+- **Real-time Updates**: Plot view resets automatically when selection changes
+
+### 💾 Export Capabilities
+- **CSV Export**: Right-click context menus to save plot data as CSV files
+- **High-Resolution Images**: Export plots as PNG images with 1600x1200 resolution
+- **Viewport-Aware Export**: Exported images respect current zoom/pan settings
+- **Theme-Consistent Export**: Exported images match current UI theme (dark/light)
+- **Professional Output**: Publication-quality images with proper legends and styling
+
+### 🔧 Technical Features
+- **Large File Support**: Efficient handling of large calibration datasets
+- **Progress Feedback**: Loading progress indication for large files
+- **Error Handling**: Comprehensive error reporting and user feedback
+- **Memory Efficient**: Optimized data structures for performance
+- **Cross-Platform**: Works on Windows, macOS, and Linux
 
 ## Installation
 
+### Requirements
+- Rust 1.70+ with Cargo
+- Windows, macOS, or Linux
+
+### Building from Source
 ```bash
+# Clone the repository
+git clone <repository-url>
+cd visualize_calibration_report
+
+# Build in release mode for optimal performance
 cargo build --release
+
+# Run the application
+cargo run --release
 ```
 
-## Usage
-
-### Basic Commands
-
+### Running
 ```bash
-# Generate a summary of the calibration process
-./target/release/visualize_calibration_report --input path/to/CalibrationReport.csv summary
+# From the project directory
+cargo run --release
 
-# Plot error convergence for all variables (limited to top 20)
-./target/release/visualize_calibration_report --input path/to/CalibrationReport.csv error-convergence
-
-# Plot parameter value evolution
-./target/release/visualize_calibration_report --input path/to/CalibrationReport.csv value-evolution
-
-# Plot total error distribution over iterations
-./target/release/visualize_calibration_report --input path/to/CalibrationReport.csv error-distribution
-```
-
-### Advanced Usage
-
-```bash
-# Filter specific variables and limit the number plotted
-./target/release/visualize_calibration_report --input path/to/CalibrationReport.csv error-convergence --filter "AutoOwnership,DAT,WAT" --max-vars 15
-
-# Specify custom output directory
-./target/release/visualize_calibration_report --input path/to/CalibrationReport.csv --output my_plots summary
-
-# Plot specific parameter evolution
-./target/release/visualize_calibration_report --input path/to/CalibrationReport.csv value-evolution --filter "Montreal,Laval" --max-vars 8
+# Or run the built executable directly
+./target/release/visualize_calibration_report
 ```
 
 ## CSV File Format
@@ -60,63 +80,3 @@ Iteration,Error:AutoOwnership-1,Error:AutoOwnership-2,Value:AutoOwnership-1,Valu
 1,0.08,-0.03,1.15,0.82
 ...
 ```
-
-## Output
-
-The tool generates PNG images in the specified output directory (default: `output/`):
-- `error_convergence.png`: Line plot showing how errors change over iterations
-- `value_evolution.png`: Line plot showing how parameter values evolve
-- `error_distribution.png`: Line plot of total absolute error over iterations
-
-## Options
-
-- `--input` (`-i`): Path to the calibration report CSV file (required)
-- `--output` (`-o`): Output directory for plots (default: "output")
-- `--filter` (`-f`): Comma-separated list of terms to filter variables
-- `--max-vars` (`-m`): Maximum number of variables to plot (default: 20)
-
-## Examples
-
-### Analyzing Auto Ownership Variables
-```bash
-./target/release/visualize_calibration_report -i calibration.csv error-convergence -f "AutoOwnership" -m 5
-```
-
-### Quick Overview
-```bash
-./target/release/visualize_calibration_report -i calibration.csv summary
-./target/release/visualize_calibration_report -i calibration.csv error-distribution
-```
-
-### Detailed Analysis of Transit Variables
-```bash
-./target/release/visualize_calibration_report -i calibration.csv error-convergence -f "WAT,DAT,PAT" -m 15
-./target/release/visualize_calibration_report -i calibration.csv value-evolution -f "WAT,DAT,PAT" -m 15
-```
-
-## Interpreting Results
-
-### Summary Output
-- **Total iterations**: Number of calibration iterations processed
-- **Number of error variables**: Count of variables being calibrated
-- **Top variables by final error**: Variables with highest absolute error at the end
-- **Total absolute error**: Sum of all absolute errors at start vs. end
-- **Improvement percentage**: Positive values indicate error reduction
-
-### Error Convergence Plots
-- X-axis: Iteration number
-- Y-axis: Absolute error value
-- Each line represents a different variable
-- Ideally, lines should trend downward (converging to zero)
-
-### Value Evolution Plots
-- X-axis: Iteration number  
-- Y-axis: Parameter value
-- Shows how the calibration algorithm adjusts parameter values
-- Should stabilize as calibration converges
-
-### Error Distribution Plots
-- X-axis: Iteration number
-- Y-axis: Total absolute error (sum of all errors)
-- Shows overall convergence progress
-- Should trend downward for successful calibration
