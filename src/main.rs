@@ -467,7 +467,7 @@ impl CalibrationApp {
                 // Estimate column width: checkbox + text + padding (~200px per column)
                 let available_width = ui.available_width();
                 let estimated_column_width = 200.0;
-                let columns_count = ((available_width / estimated_column_width) as usize).clamp(1, 6); // Between 1-6 columns
+                let columns_count = (available_width / estimated_column_width) as usize;
                 let vars_per_column = filtered_vars.len().div_ceil(columns_count);
                 
                 ui.horizontal_top(|ui| {
