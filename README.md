@@ -57,6 +57,8 @@ cargo build --release
 cargo run --release
 ```
 
+On Linux it might be required to install the `fontconfig-devel` library.
+
 ### Running
 ```bash
 # From the project directory
