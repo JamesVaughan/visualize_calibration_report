@@ -29,6 +29,8 @@ struct CalibrationApp {
     selected_vars: Vec<bool>,
     prev_selected_vars: Vec<bool>, // Track previous selection to detect changes
     filter_text: String,
+    focus_filter: bool, // Flag to focus filter input on next frame
+    filter_has_focus: bool, // Track if filter currently has focus
     
     // Theme state
     is_dark_mode: Option<bool>, // None = follow system, Some(true) = force dark, Some(false) = force light
@@ -47,6 +49,8 @@ impl Default for CalibrationApp {
             selected_vars: Vec::new(),
             prev_selected_vars: Vec::new(),
             filter_text: String::new(),
+            focus_filter: false,
+            filter_has_focus: false,
             is_dark_mode: None, // Start with system default
         }
     }
@@ -388,6 +392,19 @@ impl eframe::App for CalibrationApp {
         // Apply theme at the beginning of each frame
         self.apply_theme(ctx);
         
+        // Handle keyboard shortcuts
+        ctx.input(|i| {
+            // Ctrl+F to focus filter
+            if i.modifiers.ctrl && i.key_pressed(egui::Key::F) {
+                self.focus_filter = true;
+            }
+            
+            // Escape to clear filter when filter has focus
+            if i.key_pressed(egui::Key::Escape) && self.filter_has_focus {
+                self.filter_text.clear();
+            }
+        });
+        
         egui::CentralPanel::default().show(ctx, |ui| {
             // Header with title and theme toggle
             ui.horizontal(|ui| {
@@ -456,7 +473,25 @@ impl eframe::App for CalibrationApp {
             // Filter controls
             ui.horizontal(|ui| {
                 ui.label("🔍 Filter:");
-                ui.text_edit_singleline(&mut self.filter_text);
+                
+                let filter_response = ui.text_edit_singleline(&mut self.filter_text);
+                
+                // Track filter focus state
+                self.filter_has_focus = filter_response.has_focus();
+                
+                // Handle focus request from keyboard shortcut
+                if self.focus_filter {
+                    filter_response.request_focus();
+                    self.focus_filter = false;
+                }
+                
+                // Add tooltip with more information
+                filter_response.on_hover_text("Filter variables by name. Use commas to separate multiple terms. Press Ctrl+F to focus this field, Esc to clear when focused.");
+                
+                // Add hint about keyboard shortcuts
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    ui.small("(Ctrl+F, Esc to clear)");
+                });
             });
             
             ui.separator();
