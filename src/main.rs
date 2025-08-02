@@ -1,3 +1,6 @@
+// Hide console window in release builds on Windows
+#![cfg_attr(all(not(debug_assertions), target_os = "windows"), windows_subsystem = "windows")]
+
 use anyhow::{Context, Result};
 use csv::ReaderBuilder;
 use egui::{Color32, RichText, Ui};
@@ -62,7 +65,7 @@ impl CalibrationApp {
         match self.is_dark_mode {
             Some(true) => ctx.set_visuals(egui::Visuals::dark()),
             Some(false) => ctx.set_visuals(egui::Visuals::light()),
-            None => ctx.set_visuals(egui::Visuals::default()),
+            _ => ctx.set_visuals(egui::Visuals::default()),
         }
     }
     
@@ -129,18 +132,26 @@ impl CalibrationApp {
         
         let mut variable_names: Vec<String> = variable_names.into_iter().collect();
         variable_names.sort();
-        
-        // Initialize selection vectors
-        let selected_vars = vec![false; variable_names.len()];
-        let prev_selected_vars = vec![false; variable_names.len()];
-        
+
         // Update state
+        
+        // Check to see if we are being reloaded
+        if self.file_loaded && variable_names == self.variable_names {
+            // If the variable names are the same, restore the previous selection
+            self.selected_vars = self.prev_selected_vars.clone();   
+        }
+        else {
+            // If the variable names have changed, reset the selection
+            self.selected_vars = vec![false; variable_names.len()];
+            self.prev_selected_vars = vec![false; variable_names.len()];
+        }
+
+        // If we are loading a new file, reset the previous selection
+        // Update the rest of the variables.
         self.records = records;
         self.error_columns = error_columns;
         self.value_columns = value_columns;
         self.variable_names = variable_names;
-        self.selected_vars = selected_vars;
-        self.prev_selected_vars = prev_selected_vars;
         self.file_loaded = true;
         self.loading_error = None;
         
@@ -403,6 +414,11 @@ impl eframe::App for CalibrationApp {
             if i.key_pressed(egui::Key::Escape) && self.filter_has_focus {
                 self.filter_text.clear();
             }
+
+            // Reload file on F5, if one has been selected
+            if i.key_pressed(egui::Key::F5) && !self.file_path.is_empty() {
+                self.try_load_file();
+            }
         });
         
         egui::CentralPanel::default().show(ctx, |ui| {
@@ -444,18 +460,12 @@ impl eframe::App for CalibrationApp {
                         .pick_file()
                     {
                         self.file_path = path.display().to_string();
-                        if let Err(e) = self.load_file(self.file_path.clone()) {
-                            self.loading_error = Some(e.to_string());
-                            self.file_loaded = false;
-                        }
+                        self.try_load_file();
                     }
                 }
                 
                 if !self.file_path.is_empty() && ui.button("🔄 Reload").clicked() {
-                    if let Err(e) = self.load_file(self.file_path.clone()) {
-                        self.loading_error = Some(e.to_string());
-                        self.file_loaded = false;
-                    }
+                    self.try_load_file();
                 }
             });
             
@@ -800,11 +810,20 @@ impl CalibrationApp {
             });
         }
     }
+
+    fn try_load_file(&mut self) {
+        if let Err(e) = self.load_file(self.file_path.clone()) {
+            self.loading_error = Some(e.to_string());
+            self.file_loaded = false;
+        }
+    }
 }
 
 fn main() -> Result<(), eframe::Error> {
     env_logger::init(); // Log to stderr (if you run with `RUST_LOG=debug`).
     
+    // Create a simple icon data (16x16 chart icon)
+   
     let options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
             .with_inner_size([1600.0, 1000.0])
@@ -822,3 +841,4 @@ fn main() -> Result<(), eframe::Error> {
         }),
     )
 }
+
