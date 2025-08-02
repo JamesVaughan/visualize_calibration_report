@@ -823,13 +823,11 @@ fn main() -> Result<(), eframe::Error> {
     env_logger::init(); // Log to stderr (if you run with `RUST_LOG=debug`).
     
     // Create a simple icon data (16x16 chart icon)
-    let icon_data = create_icon_data();
-    
+   
     let options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
             .with_inner_size([1600.0, 1000.0])
-            .with_title("Calibration Report Visualizer")
-            .with_icon(icon_data),
+            .with_title("Calibration Report Visualizer"),
         ..Default::default()
     };
     
@@ -844,61 +842,3 @@ fn main() -> Result<(), eframe::Error> {
     )
 }
 
-fn create_icon_data() -> egui::IconData {
-    // Create a 32x32 icon with a more detailed chart pattern
-    let width = 32;
-    let height = 32;
-    let mut rgba_data = vec![0u8; width * height * 4];
-    
-    // Draw a detailed chart icon
-    for y in 0..height {
-        for x in 0..width {
-            let i = (y * width + x) * 4;
-            
-            // Create a border
-            let is_border = x == 0 || y == 0 || x == width - 1 || y == height - 1;
-            
-            // Create bars of different heights (bottom-up)
-            let is_bar1 = x >= 4 && x <= 7 && y >= 20;
-            let is_bar2 = x >= 10 && x <= 13 && y >= 12;
-            let is_bar3 = x >= 16 && x <= 19 && y >= 8;
-            let is_bar4 = x >= 22 && x <= 25 && y >= 16;
-            
-            // Create a line chart
-            let is_line = (x >= 4 && x <= 25) && 
-                         (y == (20 - (x - 4) / 2) || y == (20 - (x - 4) / 2) + 1);
-            
-            if is_border {
-                // Dark border
-                rgba_data[i] = 40;      // R
-                rgba_data[i + 1] = 40;  // G
-                rgba_data[i + 2] = 40;  // B
-                rgba_data[i + 3] = 255; // A
-            } else if is_bar1 || is_bar2 || is_bar3 || is_bar4 {
-                // Blue bars
-                rgba_data[i] = 70;      // R
-                rgba_data[i + 1] = 130; // G
-                rgba_data[i + 2] = 220; // B
-                rgba_data[i + 3] = 255; // A
-            } else if is_line {
-                // Red line
-                rgba_data[i] = 220;     // R
-                rgba_data[i + 1] = 50;  // G
-                rgba_data[i + 2] = 50;  // B
-                rgba_data[i + 3] = 255; // A
-            } else {
-                // Light background
-                rgba_data[i] = 240;     // R
-                rgba_data[i + 1] = 240; // G
-                rgba_data[i + 2] = 240; // B
-                rgba_data[i + 3] = 255; // A
-            }
-        }
-    }
-    
-    egui::IconData {
-        rgba: rgba_data,
-        width: width as u32,
-        height: height as u32,
-    }
-}
