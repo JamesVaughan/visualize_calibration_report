@@ -17,6 +17,7 @@ struct CalibrationRecord {
     data: HashMap<String, f64>,
 }
 
+#[derive(Default)]
 struct CalibrationApp {
     records: Vec<CalibrationRecord>,
     error_columns: Vec<String>,
@@ -36,29 +37,8 @@ struct CalibrationApp {
     filter_has_focus: bool, // Track if filter currently has focus
     
     // Theme state
-    is_dark_mode: Option<bool>, // None = follow system, Some(true) = force dark, Some(false) = force light
+    is_dark_mode: Option<bool>, // None = follow system, Some(true) = force dark, Some(false) = force
 }
-
-impl Default for CalibrationApp {
-    fn default() -> Self {
-        Self {
-            records: Vec::new(),
-            error_columns: Vec::new(),
-            value_columns: Vec::new(),
-            variable_names: Vec::new(),
-            file_path: String::new(),
-            file_loaded: false,
-            loading_error: None,
-            selected_vars: Vec::new(),
-            prev_selected_vars: Vec::new(),
-            filter_text: String::new(),
-            focus_filter: false,
-            filter_has_focus: false,
-            is_dark_mode: None, // Start with system default
-        }
-    }
-}
-
 
 impl CalibrationApp {
     fn apply_theme(&self, ctx: &egui::Context) {
@@ -78,6 +58,7 @@ impl CalibrationApp {
         let mut rdr = ReaderBuilder::new()
             .has_headers(true)
             .from_reader(file);
+        println!("Number of Columns {}", rdr.headers()?.len());
         
         let mut records: Vec<CalibrationRecord> = Vec::new();
         let mut record_count = 0;
@@ -676,6 +657,10 @@ impl CalibrationApp {
                 let total_width = ui.available_width();
                 let plot_width = (total_width - 40.0) * 0.5;
                 ui.add_space(5.0); // Extra spacing between plots
+                
+                // Use shared plot memory for legend synchronization
+                let plot_memory_id = egui::Id::new("shared_plot_memory");
+                
                 // Error plot (left side)
                 if has_error_data {
                     ui.vertical(|ui| {
@@ -689,7 +674,9 @@ impl CalibrationApp {
                             .width(plot_width) // Reduced width to add margins
                             .legend(egui_plot::Legend::default())
                             .x_axis_label("Iteration")
-                            .y_axis_label("Error");
+                            .y_axis_label("Error")
+                            .link_cursor(plot_memory_id, true)
+                            ; // Link cursor and shared state
                         
                         // Reset view if selection changed
                         if selection_changed {
@@ -751,14 +738,15 @@ impl CalibrationApp {
                         ui.add_space(5.0); // Increased top padding
                         ui.label(RichText::new("🔵 Value").strong());
                         ui.add_space(2.0); // Increased spacing after label
-                        
+                        let legend = egui_plot::Legend::default();
                         let mut value_plot = Plot::new("value_plot")
                             .view_aspect(2.0) // Increased aspect ratio for more horizontal space
                             .height(450.0) // Increased height
                             .width(plot_width) // Reduced width to add margins
-                            .legend(egui_plot::Legend::default())
+                            .legend(legend)
                             .x_axis_label("Iteration")
-                            .y_axis_label("Value");
+                            .y_axis_label("Value")
+                            .link_cursor(plot_memory_id, true); // Link to the same shared state
                         
                         // Reset view if selection changed
                         if selection_changed {
