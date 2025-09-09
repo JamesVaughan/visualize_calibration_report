@@ -214,13 +214,12 @@ impl CalibrationApp {
                                 row.push("".to_string());
                             }
                         }
-                    } else if plot_type == "Value" && self.has_value_column(var_name) {
-                        if let Some(value_col) = self.get_value_column_name(var_name) {
-                            if let Some(&val) = record.data.get(&value_col) {
-                                row.push(val.to_string());
-                            } else {
-                                row.push("".to_string());
-                            }
+                    } else if plot_type == "Value" && self.has_value_column(var_name)
+                            && let Some(value_col) = self.get_value_column_name(var_name) {
+                        if let Some(&val) = record.data.get(&value_col) {
+                            row.push(val.to_string());
+                        } else {
+                            row.push("".to_string());
                         }
                     }
                 }
@@ -288,13 +287,12 @@ impl CalibrationApp {
                                     }
                                 }
                             }
-                        } else if plot_type == "Value" && self.has_value_column(var_name) {
-                            if let Some(value_col) = self.get_value_column_name(var_name) {
-                                for record in &self.records {
-                                    if let Some(&val) = record.data.get(&value_col) {
-                                        min_val = min_val.min(val);
-                                        max_val = max_val.max(val);
-                                    }
+                        } else if plot_type == "Value" && self.has_value_column(var_name)
+                                && let Some(value_col) = self.get_value_column_name(var_name) {
+                            for record in &self.records {
+                                if let Some(&val) = record.data.get(&value_col) {
+                                    min_val = min_val.min(val);
+                                    max_val = max_val.max(val);
                                 }
                             }
                         }
@@ -345,24 +343,23 @@ impl CalibrationApp {
                         
                         plot_idx += 1;
                     }
-                } else if plot_type == "Value" && self.has_value_column(var_name) {
-                    if let Some(value_col) = self.get_value_column_name(var_name) {
-                        let points: Vec<(f64, f64)> = self.records
-                            .iter()
-                            .filter_map(|r| {
-                                r.data.get(&value_col).map(|&val| (r.iteration as f64, val))
-                            })
-                            .collect();
-                        
-                        let color = colors[plot_idx % colors.len()];
-                        let rgb_color = RGBColor(color.r(), color.g(), color.b());
-                        
-                        chart.draw_series(LineSeries::new(points, &rgb_color))?
-                            .label(*var_name)
-                            .legend(move |(x, y)| PathElement::new(vec![(x, y), (x + 10, y)], rgb_color));
-                        
-                        plot_idx += 1;
-                    }
+                } else if plot_type == "Value" && self.has_value_column(var_name) 
+                        && let Some(value_col) = self.get_value_column_name(var_name){
+                    let points: Vec<(f64, f64)> = self.records
+                        .iter()
+                        .filter_map(|r| {
+                            r.data.get(&value_col).map(|&val| (r.iteration as f64, val))
+                        })
+                        .collect();
+                    
+                    let color = colors[plot_idx % colors.len()];
+                    let rgb_color = RGBColor(color.r(), color.g(), color.b());
+                    
+                    chart.draw_series(LineSeries::new(points, &rgb_color))?
+                        .label(*var_name)
+                        .legend(move |(x, y)| PathElement::new(vec![(x, y), (x + 10, y)], rgb_color));
+                    
+                    plot_idx += 1;
                 }
             }
             
@@ -433,16 +430,14 @@ impl eframe::App for CalibrationApp {
             ui.horizontal(|ui| {
                 ui.label("CSV File:");
                 ui.text_edit_singleline(&mut self.file_path);
-                if ui.button("📁 Browse & Load File").clicked() {
-                    if let Some(path) = rfd::FileDialog::new()
+                if ui.button("📁 Browse & Load File").clicked() 
+                && let Some(path) = rfd::FileDialog::new()
                         .add_filter("CSV Files", &["csv"])
                         .add_filter("All Files", &["*"])
                         .set_title("Select Calibration CSV File")
-                        .pick_file()
-                    {
-                        self.file_path = path.display().to_string();
-                        self.try_load_file();
-                    }
+                        .pick_file() {
+                    self.file_path = path.display().to_string();
+                    self.try_load_file();
                 }
                 
                 if !self.file_path.is_empty() && ui.button("🔄 Reload").clicked() {
@@ -570,22 +565,21 @@ impl CalibrationApp {
                                             let mut selected = self.selected_vars[var_index];
                                             
                                             // Style the checkbox based on selection and color mapping
-                                            if selected {
-                                                if let Some(&color_index) = variable_color_map.get(var_name.as_str()) {
-                                                    let graph_color = colors[color_index];
-                                                    
-                                                    // Create a custom checkbox style with the graph color
-                                                    let mut checkbox_style = ui.style().visuals.widgets.inactive;
-                                                    checkbox_style.bg_fill = graph_color;
-                                                    checkbox_style.bg_stroke = egui::Stroke::new(1.0, graph_color.gamma_multiply(0.8));
-                                                    
-                                                    let mut active_style = ui.style().visuals.widgets.active;
-                                                    active_style.bg_fill = graph_color;
-                                                    active_style.bg_stroke = egui::Stroke::new(2.0, graph_color.gamma_multiply(0.8));
-                                                    
-                                                    ui.style_mut().visuals.widgets.inactive = checkbox_style;
-                                                    ui.style_mut().visuals.widgets.active = active_style;
-                                                }
+                                            if selected 
+                                                && let Some(&color_index) = variable_color_map.get(var_name.as_str()){
+                                                let graph_color = colors[color_index];
+                                                
+                                                // Create a custom checkbox style with the graph color
+                                                let mut checkbox_style = ui.style().visuals.widgets.inactive;
+                                                checkbox_style.bg_fill = graph_color;
+                                                checkbox_style.bg_stroke = egui::Stroke::new(1.0, graph_color.gamma_multiply(0.8));
+                                                
+                                                let mut active_style = ui.style().visuals.widgets.active;
+                                                active_style.bg_fill = graph_color;
+                                                active_style.bg_stroke = egui::Stroke::new(2.0, graph_color.gamma_multiply(0.8));
+                                                
+                                                ui.style_mut().visuals.widgets.inactive = checkbox_style;
+                                                ui.style_mut().visuals.widgets.active = active_style;
                                             }
                                             
                                             if ui.checkbox(&mut selected, format!("📈 {var_name}")).changed() {
@@ -616,10 +610,9 @@ impl CalibrationApp {
             
             if ui.button("✅ Select All Filtered").clicked() {
                 for var_name in &filtered_vars {
-                    if let Some(var_index) = self.variable_names.iter().position(|x| x == var_name) {
-                        if var_index < self.selected_vars.len() {
+                    if let Some(var_index) = self.variable_names.iter().position(|x| x == var_name) 
+                        && var_index < self.selected_vars.len(){
                             self.selected_vars[var_index] = true;
-                        }
                     }
                 }
             }
@@ -687,22 +680,20 @@ impl CalibrationApp {
                                 let mut plot_idx = 0;
                                 
                                 for (_, var_name) in &selected_variables {
-                                    if self.has_error_column(var_name) {
-                                        if let Some(error_col) = self.get_error_column_name(var_name) {
-                                            let points: PlotPoints = self.records
-                                                .iter()
-                                                .filter_map(|r| {
-                                                    r.data.get(&error_col).map(|&val| [r.iteration as f64, val])
-                                                })
-                                                .collect();
-                                            
-                                            let line = Line::new(var_name.as_str(), points)
-                                                .color(colors[plot_idx % colors.len()])
-                                                .width(2.0);
-                                            
-                                            plot_ui.line(line);
-                                            plot_idx += 1;
-                                        }
+                                    if self.has_error_column(var_name) && let Some(error_col) = self.get_error_column_name(var_name){
+                                        let points: PlotPoints = self.records
+                                            .iter()
+                                            .filter_map(|r| {
+                                                r.data.get(&error_col).map(|&val| [r.iteration as f64, val])
+                                            })
+                                            .collect();
+                                        
+                                        let line = Line::new(var_name.as_str(), points)
+                                            .color(colors[plot_idx % colors.len()])
+                                            .width(2.0);
+                                        
+                                        plot_ui.line(line);
+                                        plot_idx += 1;
                                     }
                                 }
                             });
@@ -757,22 +748,20 @@ impl CalibrationApp {
                                 let mut plot_idx = 0;
                                 
                                 for (_, var_name) in &selected_variables {
-                                    if self.has_value_column(var_name) {
-                                        if let Some(value_col) = self.get_value_column_name(var_name) {
-                                            let points: PlotPoints = self.records
-                                                .iter()
-                                                .filter_map(|r| {
-                                                    r.data.get(&value_col).map(|&val| [r.iteration as f64, val])
-                                                })
-                                                .collect();
-                                            
-                                            let line = Line::new(var_name.as_str(), points)
-                                                .color(colors[plot_idx % colors.len()])
-                                                .width(2.0);
-                                            
-                                            plot_ui.line(line);
-                                            plot_idx += 1;
-                                        }
+                                    if self.has_value_column(var_name) && let Some(value_col) = self.get_value_column_name(var_name){
+                                        let points: PlotPoints = self.records
+                                            .iter()
+                                            .filter_map(|r| {
+                                                r.data.get(&value_col).map(|&val| [r.iteration as f64, val])
+                                            })
+                                            .collect();
+                                        
+                                        let line = Line::new(var_name.as_str(), points)
+                                            .color(colors[plot_idx % colors.len()])
+                                            .width(2.0);
+                                        
+                                        plot_ui.line(line);
+                                        plot_idx += 1;
                                     }
                                 }
                             });
