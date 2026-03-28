@@ -243,7 +243,7 @@ impl CalibrationApp {
             use plotters::prelude::*;
             
             // Detect current theme from egui context
-            let is_dark_mode = ctx.style().visuals.dark_mode;
+            let is_dark_mode = ctx.global_style().visuals.dark_mode;
             let bg_color = if is_dark_mode {
                 RGBColor(32, 32, 32) // Dark background
             } else {
@@ -399,9 +399,11 @@ impl eframe::App for CalibrationApp {
             }
         });
         
-        egui::CentralPanel::default().show(ctx, |ui| {
-            // Header with title and theme toggle
-            ui.horizontal(|ui| {
+    }
+
+    fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
+        // Header with title and theme toggle
+        ui.horizontal(|ui| {
                 ui.heading("📊 Calibration Report Visualizer");
                 
                 // Push the theme toggle to the right
@@ -483,9 +485,9 @@ impl eframe::App for CalibrationApp {
             ui.separator();
             
             // Variable selection and plotting
-            egui::ScrollArea::vertical().show(ui, |ui| {
-                self.show_variables_section(ui, ctx);
-            });
+        let ctx = ui.ctx().clone();
+        egui::ScrollArea::vertical().show(ui, |ui| {
+            self.show_variables_section(ui, &ctx);
         });
     }
 }
@@ -748,21 +750,22 @@ impl CalibrationApp {
                                 let mut plot_idx = 0;
                                 
                                 for (_, var_name) in &selected_variables {
-                                    if self.has_value_column(var_name) && let Some(value_col) = self.get_value_column_name(var_name){
-                                        let points: PlotPoints = self.records
-                                            .iter()
-                                            .filter_map(|r| {
-                                                r.data.get(&value_col).map(|&val| [r.iteration as f64, val])
-                                            })
-                                            .collect();
-                                        
-                                        let line = Line::new(var_name.as_str(), points)
-                                            .color(colors[plot_idx % colors.len()])
-                                            .width(2.0);
-                                        
-                                        plot_ui.line(line);
-                                        plot_idx += 1;
-                                    }
+                                    if self.has_value_column(var_name) &&
+                                        let Some(value_col) = self.get_value_column_name(var_name) {
+                                            let points: PlotPoints = self.records
+                                                .iter()
+                                                .filter_map(|r| {
+                                                    r.data.get(&value_col).map(|&val| [r.iteration as f64, val])
+                                                })
+                                                .collect();
+                                            
+                                            let line = Line::new(var_name.as_str(), points)
+                                                .color(colors[plot_idx % colors.len()])
+                                                .width(2.0);
+                                            
+                                            plot_ui.line(line);
+                                            plot_idx += 1;
+                                        }
                                 }
                             });
                         
